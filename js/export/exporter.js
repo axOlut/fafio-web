@@ -1,0 +1,223 @@
+// Transforme un formulaire rempli en vrais fichiers (PDF, Word, PowerPoint, image). Copie de Exporter.kt + Figures.kt.
+import { Block, Slide, Img, DocTheme } from "../doc.js";
+import { writeDocx } from "../docx.js";
+import { writePptx } from "../pptx.js";
+import { buildFrom, chartSpec } from "../forms/catalog.js";
+import { Form } from "../forms/model.js";
+import { themeOf, font as fontSpec } from "../forms/themes.js";
+import { renderChart } from "./chart.js";
+import { renderDoc, toPdf } from "./pdf.js";
+import { ensureFont, fontBytes, assetBytes, assetText } from "./fonts.js";
+import { Images, imageRefs } from "../data/storage.js";
+import { compressZip } from "../util.js";
+
+export const MIME = {
+    PDF: "application/pdf",
+    DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    PPTX: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    PNG: "image/png",
+};
+export const EXT = { PDF: "pdf", DOCX: "docx", PPTX: "pptx", PNG: "png" };
+
+const ctxFor = (lang, charts = true) => ({ lang, chart: (spec) => (charts ? renderChart(spec) : null) });
+
+/** Titres des sections du document (pour choisir où placer une image). */
+export function sections(type, data, lang) {
+    try {
+        const doc = buildFrom(type, data, ctxFor(lang, false));
+        const list = doc.blocks.length === 0 && doc.slides.length
+            ? doc.slides.filter((s) => !s.statement).map((s) => s.title.trim())
+            : doc.blocks.filter((b) => b.type === "HEADING" && b.level === 1).map((b) => b.text.trim());
+        return [...new Set(list.filter((x) => x))];
+    } catch (e) { return []; }
+}
+
+/** Nom de fichier lisible tiré du document. */
+export function fileName(type, data, lang, format) {
+    const req = type.fields.find((f) => f.required);
+    const first = req ? String((data.values || {})[req.id] || "").trim() : "";
+    const base = first || type.title.get(lang);
+    const clean = base.replace(/[\\/:*?"<>|\n\r\t]/g, " ").trim().replace(/\s+/g, "_").slice(0, 60);
+    return `${clean || "FAFIO"}.${EXT[format]}`;
+}
+
+/** Thème complet (couleurs, styles, polices intégrables, fonds). */
+async function theme(data, lang, forWord) {
+    const spec = themeOf(data);
+    const t = new DocTheme();
+    Object.assign(t, {
+        id: spec.id, primary: spec.primary, light: spec.light, accent: spec.accent, heading: spec.heading, pageNum: spec.pageNum,
+        bullet: spec.bullet, runningHeader: spec.runningHeader, darkSlide: spec.darkSlide,
+    });
+    const head = fontSpec(data.font || spec.headFont), body = fontSpec(data.font || spec.bodyFont);
+    t.headFontId = head.id; t.bodyFontId = body.id; t.headFont = head.officeName; t.bodyFont = body.officeName;
+    if (forWord) {
+        if (!head.standard) [t.headFontR, t.headFontB] = await fontBytes(head.id);
+        if (!body.standard) [t.bodyFontR, t.bodyFontB] = await fontBytes(body.id);
+    }
+    await Promise.all([ensureFont(head.id), ensureFont(body.id)]);
+    if (spec.hasCover) { const b = await assetBytes(`assets/themes/${spec.id}_cover.jpg`); if (b) t.coverBg = new Img(b, 1240, 1754, "jpeg"); }
+    if (spec.hasSlide) { const b = await assetBytes(`assets/themes/${spec.id}_slide.jpg`); if (b) t.slideBg = new Img(b, 1600, 900, "jpeg"); }
+    if (lang === "en") { t.pageWord = "Page"; t.ofWord = "of"; }
+    else if (lang === "ar") { t.pageWord = "صفحة"; t.ofWord = "من"; }
+    else { t.pageWord = "Page"; t.ofWord = "sur"; }
+    return t;
+}
+
+/** Construit le document complet, images comprises. */
+export async function buildDoc(type, data, lang, forWord = false) {
+    const doc = buildFrom(type, data, ctxFor(lang));
+    doc.rtl = lang === "ar";
+    doc.style = data.style || "MODERN";
+    doc.theme = await theme(data, lang, forWord);
+    const images = new Map();
+    for (const ref of imageRefs(data)) { const b = await Images.bytes(ref); if (b) images.set(ref, b); }
+    applyFigures(doc, data, lang, images);
+    return doc;
+}
+
+// ---------------------------------------------------------------- Figures
+
+const word = (lang) => (lang === "ar" ? "الشكل" : "Figure");
+
+function caption(legend) {
+    const b = Block.para("", "CENTER", false).setItalic().setMuted().size(9.5);
+    b.legend = legend;
+    return b;
+}
+
+export function parsePoints(text) {
+    const out = [];
+    for (const line of String(text || "").split("\n")) {
+        const parts = line.split(/[;\t:]/).map((s) => s.trim()).filter((s) => s);
+        if (parts.length < 2) continue;
+        const y = Number(parts[1].replace(/ /g, "").replace(",", "."));
+        if (parts[1] === "" || isNaN(y)) continue;
+        out.push([parts[0], y]);
+    }
+    return out;
+}
+
+function applyFigures(doc, data, lang, images) {
+    // emplacements d'images des rubriques
+    for (let i = 0; i < doc.blocks.length;) {
+        const b = doc.blocks[i];
+        if (b.type === "SLOT") {
+            doc.blocks.splice(i, 1);
+            const l = images.get(b.ref);
+            const img = l ? Block.image(l.data, l.w, l.h, "jpeg") : null;
+            if (img) { doc.blocks.splice(i, 0, img, caption(b.legend || "")); i += 2; }
+            continue;
+        }
+        i++;
+    }
+    for (const s of doc.slides) {
+        if (s.imageRef && s.imageRef.trim()) {
+            const l = images.get(s.imageRef);
+            if (!l) continue;
+            s.png = l.data; s.pxW = l.w; s.pxH = l.h; s.imgType = "jpeg";
+            if (s.legend == null) s.legend = "";
+        }
+    }
+    const logo = (ref) => { const l = ref ? images.get(ref) : null; return l ? new Img(l.data, l.w, l.h, "jpeg") : null; };
+    doc.logoLeft = logo(doc.logoLeftRef);
+    doc.logoRight = logo(doc.logoRightRef);
+    const slidesMode = doc.blocks.length === 0 && doc.slides.length > 0;
+    for (const item of new Form(data).items("figures")) {
+        const v = visual(item, doc.theme.primary, images);
+        if (!v) continue;
+        const legend = String(item.caption || "").trim(), after = String(item.after || "").trim();
+        if (slidesMode) insertSlide(doc, v, legend, after); else insertBlocks(doc, v, legend, after);
+    }
+    let n = 0;
+    for (const b of doc.blocks) {
+        if (b.legend == null) continue;
+        n++;
+        b.text = b.legend ? `${word(lang)} ${n} : ${b.legend}` : `${word(lang)} ${n}`;
+    }
+    for (const s of doc.slides) {
+        if (s.legend == null || !s.png) continue;
+        n++;
+        s.caption = s.legend ? `${word(lang)} ${n} : ${s.legend}` : `${word(lang)} ${n}`;
+    }
+}
+
+function visual(item, color, images) {
+    if ((item.kind || "0") === "1") {
+        const points = parsePoints(item.data);
+        if (!points.length) return null;
+        const type = { 1: "BAR", 2: "PIE" }[item.chart_type] || "LINE";
+        const img = renderChart({ type, title: "", xLabel: item.x_label || "", yLabel: item.y_label || "", points, accent: color });
+        return img ? { bytes: img.png, w: img.width, h: img.height, type: "png" } : null;
+    }
+    const l = images.get(item.image || "");
+    return l ? { bytes: l.data, w: l.w, h: l.h, type: "jpeg" } : null;
+}
+
+function insertBlocks(doc, v, legendText, after) {
+    const image = Block.image(v.bytes, v.w, v.h, v.type);
+    if (!image) return;
+    let index = doc.blocks.length;
+    if (after) {
+        const h = doc.blocks.findIndex((b) => b.type === "HEADING" && b.level >= 1 && b.text.trim() === after);
+        if (h >= 0) {
+            const level = doc.blocks[h].level;
+            let k = h + 1;
+            while (k < doc.blocks.length && !(doc.blocks[k].type === "HEADING" && doc.blocks[k].level >= 1 && doc.blocks[k].level <= level)) k++;
+            index = k;
+        }
+    }
+    doc.blocks.splice(index, 0, image, caption(legendText));
+}
+
+function insertSlide(doc, v, legend, after) {
+    const s = new Slide(legend || "Figure", []);
+    s.png = v.bytes; s.pxW = v.w; s.pxH = v.h; s.imgType = v.type; s.legend = legend; s.caption = " ";
+    let index = doc.slides.findIndex((x) => !x.statement && x.title.trim() === after);
+    index = index >= 0 ? index + 1 : -1;
+    if (index < 0) {
+        index = doc.slides.length;
+        while (index > 0 && doc.slides[index - 1].statement) index--;
+    } else {
+        while (index < doc.slides.length && doc.slides[index].caption && doc.slides[index].bullets.length === 0) index++;
+    }
+    doc.slides.splice(index, 0, s);
+}
+
+// ---------------------------------------------------------------- Export
+
+let pptxAssets = null;
+async function templates() {
+    if (pptxAssets) return pptxAssets;
+    const names = ["theme1.xml", "slideMaster1.xml", "slideLayout1.xml", "presProps.xml", "viewProps.xml", "tableStyles.xml"];
+    const out = {};
+    for (const n of names) out["pptx/" + n] = await assetText("assets/pptx/" + n);
+    pptxAssets = out;
+    return out;
+}
+
+/** Produit le fichier demandé. Renvoie un Blob. */
+export async function exportFile(type, data, lang, format) {
+    if (format === "PNG") {
+        const img = renderChart(chartSpec(new Form(data)));
+        if (!img) throw new Error("no data");
+        return new Blob([img.png], { type: MIME.PNG });
+    }
+    const doc = await buildDoc(type, data, lang, format === "DOCX");
+    let bytes;
+    if (format === "DOCX") bytes = await compressZip(writeDocx(doc));
+    else if (format === "PPTX") {
+        if (!doc.slides.length) throw new Error("no slides");
+        bytes = await compressZip(writePptx(doc, await templates()));
+    } else {
+        const r = await renderDoc(doc, 2.5);
+        bytes = await toPdf(r, doc.title || type.title.get(lang));
+    }
+    return new Blob([bytes], { type: MIME[format] });
+}
+
+/** Pages de l'aperçu (canevas). */
+export async function preview(type, data, lang) {
+    const doc = await buildDoc(type, data, lang, false);
+    return renderDoc(doc, 1.6);
+}
