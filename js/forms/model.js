@@ -30,7 +30,7 @@ export function isVisible(f, values) {
 }
 
 export function G(id, label, itemLabel, fields, o = {}) {
-    return { id, label, itemLabel, fields, minItems: o.minItems || 0, startItems: o.startItems === undefined ? 1 : o.startItems };
+    return { id, label, itemLabel, fields, minItems: o.minItems || 0, startItems: o.startItems === undefined ? 1 : o.startItems, columns: o.columns || [] };
 }
 
 // ---------------------------------------------------------------- Données saisies
@@ -61,7 +61,8 @@ export function blank(type, lang) {
     const groups = {};
     for (const g of type.groups || []) groups[g.id] = Array.from({ length: g.startItems }, () => ({}));
     if ((type.defaultCoverModel || 0) > 0) values.cv_model = String(type.defaultCoverModel);
-    return { values, groups, style: "MODERN", cover: !!type.defaultCover, theme: "", font: "" };
+    // Présentations : un design illustré par défaut (image de diapositive)
+    return { values, groups, style: "MODERN", cover: !!type.defaultCover, theme: type.module === "SLIDES" ? "corporate" : "", font: "" };
 }
 
 /** Accès pratique aux valeurs pendant la construction. */

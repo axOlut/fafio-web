@@ -230,6 +230,7 @@ export function writePptx(doc, assets) {
                         para(s.caption, 1300, false, true, "4B5563", bodyFont, "ctr", false), "t"));
             }
         }
+        if (!s.tableRows.isEmpty() && !s.tableHeader.isEmpty()) b.append(table(s, left, ~~(1.75 * IN), SW - 2 * left));
         // numéro de diapositive
         b.append(text(SW - ~~(1.5 * IN), SH - ~~(0.6 * IN), ~~(1.0 * IN), ~~(0.4 * IN),
                 para(String(number), 1200, false, false, "9CA3AF", bodyFont, "r", false), "ctr"));
@@ -237,6 +238,42 @@ export function writePptx(doc, assets) {
     }
 
     // ------------------------------------------------------------ Formes
+
+    /** Tableau natif PowerPoint (modifiable). */
+    function table(s, x, y, w) {
+        let cols = s.tableHeader.length;
+        let colW = Math.floor(w / cols), rowH = ~~(0.42 * IN);
+        let size = s.tableRows.length > 8 ? 1300 : 1600;
+        let id = shapeId++;
+        let t = new SB();
+        t.append("<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"").append(id).append("\" name=\"Tableau ").append(id).append("\"/>")
+                .append("<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>")
+                .append("<p:xfrm><a:off x=\"").append(x).append("\" y=\"").append(y).append("\"/><a:ext cx=\"").append(colW * cols)
+                .append("\" cy=\"").append(rowH * (s.tableRows.length + 1)).append("\"/></p:xfrm>")
+                .append("<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tblPr firstRow=\"1\"/><a:tblGrid>");
+        for (let i = 0; i < cols; i++) t.append("<a:gridCol w=\"").append(colW).append("\"/>");
+        t.append("</a:tblGrid>");
+        t.append("<a:tr h=\"").append(rowH).append("\">");
+        for (const h of s.tableHeader) t.append(tableCell(h, size, true, "FFFFFF", accent));
+        t.append("</a:tr>");
+        let ri = 0;
+        for (const r of s.tableRows) {
+            t.append("<a:tr h=\"").append(rowH).append("\">");
+            for (let i = 0; i < cols; i++) t.append(tableCell(i < r.length ? r.get(i) : "", size, false, "1F2937", ri % 2 == 1 ? doc.theme.lightHex() : "FFFFFF"));
+            t.append("</a:tr>");
+            ri++;
+        }
+        return t.append("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>").toString();
+    }
+
+    function tableCell(text, size, bold, color, fill) {
+        let ln = "<a:solidFill><a:srgbClr val=\"D1D5DB\"/></a:solidFill>";
+        return "<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang=\"fr-FR\" sz=\"" + size + "\"" + (bold ? " b=\"1\"" : "") + " dirty=\"0\">"
+                + "<a:solidFill><a:srgbClr val=\"" + color + "\"/></a:solidFill><a:latin typeface=\"" + esc(bodyFont) + "\"/></a:rPr><a:t>" + esc(text) + "</a:t></a:r></a:p></a:txBody>"
+                + "<a:tcPr marL=\"91440\" marR=\"91440\" marT=\"45720\" marB=\"45720\" anchor=\"ctr\">"
+                + "<a:lnL w=\"9525\">" + ln + "</a:lnL><a:lnR w=\"9525\">" + ln + "</a:lnR><a:lnT w=\"9525\">" + ln + "</a:lnT><a:lnB w=\"9525\">" + ln + "</a:lnB>"
+                + "<a:solidFill><a:srgbClr val=\"" + fill + "\"/></a:solidFill></a:tcPr></a:tc>";
+    }
 
     function rect(x, y, w, h, fill, alphaPct) {
         let id = shapeId++;

@@ -2,6 +2,7 @@
 import { Block, Slide, lines } from "../doc.js";
 import { t, F, G, TODAY, YEAR, Form, B, imgKey, capKey, hasImg, number, formatNumber } from "./model.js";
 import { themeOf } from "./themes.js";
+import { membersGroup, members, memberNames, applyMembers, measureTable } from "./science.js";
 
 // ------------------------------------------------------------ Libellés communs
 const L_INSTITUTION = t("Établissement", "Institution", "المؤسسة");
@@ -37,29 +38,31 @@ export const COVER = [
     F("cv_logo_left", t("Logo de l'université", "University logo", "شعار الجامعة"), { type: "IMAGE", visibleIf: ["cv_model", "!0"] }),
     F("cv_logo_right", t("Logo de la faculté / de l'école", "Faculty / school logo", "شعار الكلية / المدرسة"), { type: "IMAGE", visibleIf: ["cv_model", "1"] }),
     F("cv_lab", t("Laboratoire / département", "Laboratory / department", "المخبر / القسم"), { visibleIf: ["cv_model", "2"] }),
-    F("cv_group", t("Groupe / horaire", "Group / time slot", "الفوج / التوقيت"), { visibleIf: ["cv_model", "2"] }),
-    F("cv_info", t("Informations (une par ligne)", "Details (one per line)", "معلومات (واحدة في كل سطر)"), { type: ML,
-        defT: t("PRÉSENTÉ PAR : \nMATRICULE : \nOPTION : \nENCADREUR : \nRESPONSABLE DE L'UE : ",
-            "PRESENTED BY: \nREGISTRATION NO.: \nOPTION: \nSUPERVISOR: \nCOURSE LEAD: ",
-            "إعداد: \nرقم التسجيل: \nالتخصص: \nالمؤطر: \nمسؤول الوحدة: "),
-        visibleIf: ["cv_model", "2"] }),
+    F("cv_group", t("Jour et heure de la séance", "Session day and time", "يوم وساعة الحصة"), { visibleIf: ["cv_model", "2"] }),
+    F("cv_info", t("Autres informations (facultatif, une par ligne)", "Other details (optional, one per line)", "معلومات أخرى (اختياري، واحدة في كل سطر)"), { type: ML, visibleIf: ["cv_model", "2"] }),
+    F("cv_grades", t("Cadres « Note finale » et « Observation »", "“Final mark” and “Comments” boxes", "خانتا « العلامة النهائية » و« الملاحظة »"), { type: "CHOICE",
+        options: [t("Oui", "Yes", "نعم"), t("Non", "No", "لا")], visibleIf: ["cv_model", "2"] }),
+    F("cv_border", t("Bordure autour de la page de garde", "Border around the cover page", "إطار حول صفحة الغلاف"), { type: "CHOICE",
+        options: [t("Non", "No", "لا"), t("Oui", "Yes", "نعم")], visibleIf: ["cv_model", "!0"] }),
     F("cv_supervision", t("Sous la supervision de", "Supervised by", "تحت إشراف"), { type: LIST, hint: H_AUTHORS, visibleIf: ["cv_model", "1"] }),
     F("cv_year", t("Année académique", "Academic year", "السنة الجامعية"), { def: YEAR, visibleIf: ["cv_model", "!0"] }),
 ];
 
 const NO_IMAGE = new Set(["authors", "attendees", "absents", "agenda", "columns", "fields", "options", "data", "sender_address", "recipient",
-    "org_details", "closing", "purpose", "attachments", "copies", "references"]);
+    "org_details", "closing", "purpose", "attachments", "copies", "references", "calc", "desc"]);
 
 /** Une rubrique peut-elle recevoir une image ? */
 export function allowsImage(type, f) {
     return type.module !== "CV" && type.module !== "CHARTS" && (f.type === ML || f.type === LIST) && !NO_IMAGE.has(f.id) && !f.id.startsWith("cv_");
 }
 
+export const CHART_TYPES = [t("Courbe", "Line", "منحنى"), t("Barres", "Bars", "أعمدة"), t("Secteurs", "Pie", "دائرة"),
+    t("Points + droite de régression", "Points + regression line", "نقاط + خط الانحدار")];
+
 export const FIGURES = G("figures", t("Images et graphiques", "Images and charts", "الصور والرسوم البيانية"), t("Figure", "Figure", "شكل"), [
     F("kind", t("Type", "Type", "النوع"), { type: "CHOICE", options: [t("Image", "Image", "صورة"), t("Graphique", "Chart", "رسم بياني")] }),
     F("image", t("Image", "Image", "الصورة"), { type: "IMAGE", visibleIf: ["kind", "0"] }),
-    F("chart_type", t("Type de graphique", "Chart type", "نوع الرسم البياني"), { type: "CHOICE",
-        options: [t("Courbe", "Line", "منحنى"), t("Barres", "Bars", "أعمدة"), t("Secteurs", "Pie", "دائرة")], visibleIf: ["kind", "1"] }),
+    F("chart_type", t("Type de graphique", "Chart type", "نوع الرسم البياني"), { type: "CHOICE", options: CHART_TYPES, visibleIf: ["kind", "1"] }),
     F("x_label", t("Nom de l'axe horizontal (X)", "Horizontal axis name (X)", "اسم المحور الأفقي (س)"), { visibleIf: ["kind", "1"] }),
     F("y_label", t("Nom de l'axe vertical (Y)", "Vertical axis name (Y)", "اسم المحور العمودي (ص)"), { visibleIf: ["kind", "1"] }),
     F("data", t("Données (X ; Y)", "Data (X ; Y)", "البيانات (س ; ص)"), { type: ML,
@@ -138,7 +141,7 @@ export function chartSpec(f) {
         if (y == null) continue;
         pts.push([String(p.x || "").trim(), y]);
     }
-    const type = ["LINE", "BAR", "PIE"][f.choice("type")] || "LINE";
+    const type = ["LINE", "BAR", "PIE", "REG"][f.choice("type")] || "LINE";
     return { type, title: f.v("title"), xLabel: f.v("x_label"), yLabel: f.v("y_label"), points: pts, accent: themeOf(f).primary };
 }
 
@@ -147,41 +150,122 @@ const SLIDES = ["PPTX", "PDF", "DOCX"];
 
 // ============================================================ 1. RAPPORTS
 
+const TP_MEMBERS = membersGroup(t("Présenté par (membres du groupe)", "Presented by (group members)", "إعداد (أعضاء الفوج)"));
+const ROLES = [t("Examinateur", "Examiner", "الممتحن"), t("Encadreur", "Supervisor", "المؤطر"), t("Enseignant", "Teacher", "الأستاذ")];
+
 const TP = {
     id: "tp", module: "REPORTS", coverFields: COVER, defaultCoverModel: 2, supportsCover: true, defaultCover: true, formats: ALL,
     title: t("Compte rendu de TP", "Lab report", "تقرير أعمال تطبيقية"),
-    description: t("Objectifs, matériel, mode opératoire, résultats", "Objectives, equipment, procedure, results", "الأهداف، الأدوات، طريقة العمل، النتائج"),
-    groups: [FIGURES],
+    description: t("Résumé, matériels et méthodes, résultats, graphiques", "Abstract, materials and methods, results, charts", "ملخص، الأدوات والطرق، النتائج، الرسوم"),
+    groups: [
+        TP_MEMBERS,
+        G("equipment", t("Matériels utilisés", "Equipment used", "الأدوات المستعملة"), t("Matériel", "Item", "أداة"), [
+            F("name", t("Nom du matériel", "Item name", "اسم الأداة")),
+            F("desc", t("À quoi il sert (facultatif)", "What it is for (optional)", "دوره (اختياري)")),
+            F("photo", t("Photo (facultatif)", "Photo (optional)", "صورة (اختياري)"), { type: "IMAGE" }),
+        ], { startItems: 2 }),
+        G("tables", t("Tableaux de mesures", "Measurement tables", "جداول القياسات"), t("Tableau", "Table", "جدول"), [
+            F("title", t("Titre du tableau", "Table title", "عنوان الجدول")),
+            F("layout", t("Disposition", "Layout", "الترتيب"), { type: "CHOICE",
+                options: [t("Grandeurs en lignes (couché)", "Quantities in rows", "المقادير في أسطر"), t("Grandeurs en colonnes", "Quantities in columns", "المقادير في أعمدة")] }),
+            F("data", t("Mesures", "Measurements", "القياسات"), { type: ML,
+                hint: t("Une grandeur par ligne : nom (unité) ; valeur ; valeur …", "One quantity per line: name (unit) ; value ; value …", "مقدار في كل سطر: الاسم (الوحدة) ; قيمة ; قيمة …"), visibleIf: ["layout", "0"] }),
+            F("data_cols", t("Mesures", "Measurements", "القياسات"), { type: ML,
+                hint: t("1re ligne : les titres des colonnes, puis une ligne par essai, valeurs séparées par « ; ».", "First line: column titles, then one line per trial, values separated by \";\".", "السطر الأول: عناوين الأعمدة، ثم سطر لكل تجربة."), visibleIf: ["layout", "1"] }),
+            F("calc", t("Grandeurs calculées automatiquement (facultatif)", "Auto-calculated quantities (optional)", "مقادير تُحسب تلقائيًا (اختياري)"), { type: ML,
+                hint: t("Une formule par ligne : nouvelle grandeur = calcul. Utilise les noms des grandeurs (h, L, t…). Opérations : + − * / ^ sqrt sin cos ln.",
+                    "One formula per line: new quantity = calculation, using the quantity names (h, L, t…). Operations: + − * / ^ sqrt sin cos ln.",
+                    "صيغة في كل سطر: مقدار جديد = حساب، باستعمال أسماء المقادير. العمليات: + − * / ^ sqrt sin cos ln.") }),
+        ], { startItems: 1 }),
+        FIGURES,
+    ],
     fields: [
         F("institution", L_INSTITUTION),
-        F("course", t("Matière / unité d'enseignement", "Subject / course", "المادة")),
+        F("course", t("Matière / UE (avec son code)", "Subject / course (with code)", "المادة / الوحدة (مع رمزها)")),
         F("title", t("Titre du TP", "Lab title", "عنوان العمل التطبيقي"), { required: true }),
-        F("authors", L_AUTHORS, { type: LIST, hint: H_AUTHORS }),
-        F("supervisor", t("Encadrant", "Supervisor", "المشرف")),
         date(),
+        F("supervisor_role", t("Titre du responsable", "Supervisor's title", "صفة المسؤول"), { type: "CHOICE", options: ROLES }),
+        F("supervisor", t("Nom du responsable", "Supervisor's name", "اسم المسؤول")),
+        F("abstract", t("Abstract (résumé en anglais, facultatif)", "Abstract (optional)", "ملخص بالإنجليزية (اختياري)"), { type: ML }),
+        F("resume", t("Résumé (facultatif)", "Summary (optional)", "ملخص (اختياري)"), { type: ML }),
+        F("intro", L_INTRO, { type: ML }),
         F("objectives", t("Objectifs", "Objectives", "الأهداف"), { type: ML }),
         F("principle", t("Principe / rappel théorique", "Principle / theory", "المبدأ / تذكير نظري"), { type: ML }),
-        F("materials", t("Matériel et produits", "Equipment and materials", "الأدوات والمواد"), { type: LIST, hint: H_ONE_PER_LINE }),
-        F("protocol", t("Mode opératoire (étapes)", "Procedure (steps)", "طريقة العمل (المراحل)"), { type: LIST, hint: t("Une étape par ligne", "One step per line", "مرحلة واحدة في كل سطر") }),
-        F("measures", t("Tableau de mesures", "Measurements table", "جدول القياسات"), { type: ML, hint: H_TABLE }),
-        F("results", t("Résultats", "Results", "النتائج"), { type: ML }),
-        F("analysis", t("Analyse et discussion", "Analysis and discussion", "التحليل والمناقشة"), { type: ML }),
+        F("protocol", t("Méthode (étapes suivies)", "Method (steps followed)", "الطريقة (المراحل المتبعة)"), { type: LIST, hint: t("Une étape par ligne", "One step per line", "مرحلة واحدة في كل سطر") }),
+        F("results", t("Résultats et calculs", "Results and calculations", "النتائج والحسابات"), { type: ML }),
+        F("analysis", t("Interprétation", "Interpretation", "التفسير"), { type: ML }),
+        F("applications", t("Quelques applications (facultatif)", "Some applications (optional)", "بعض التطبيقات (اختياري)"), { type: ML,
+            hint: t("Commence une ligne par - pour une puce.", "Start a line with - for a bullet.", "ابدأ السطر بـ - لنقطة.") }),
         F("conclusion", L_CONCLUSION, { type: ML }),
+        F("references", t("Bibliographie", "Bibliography", "المراجع"), { type: LIST, hint: H_ONE_PER_LINE }),
+        F("breaks", t("Chaque grande partie sur une nouvelle page", "Each main part on a new page", "كل جزء رئيسي في صفحة جديدة"), { type: "CHOICE",
+            options: [t("Oui", "Yes", "نعم"), t("Non", "No", "لا")] }),
     ],
     build(f, c) {
         const l = c.lang;
-        const d = cover(f, l, { title: f.v("title"), subtitle: f.v("course"), author: f.v("authors"), institution: f.v("institution"),
-            extra: labelled(t("Encadrant", "Supervisor", "المشرف").get(l), f.v("supervisor")), date: f.v("date") });
-        if (!d.cover) { d.docTitle(f.v("title")); d.line(f.v("course"), "CENTER"); d.line(lines(f.v("authors")).join(", "), "CENTER"); d.line(f.v("date"), "CENTER"); }
-        d.rubric(f.values, "objectives", t("Objectifs", "Objectives", "الأهداف").get(l));
-        d.rubric(f.values, "principle", t("Principe", "Principle", "المبدأ").get(l));
-        d.rubric(f.values, "materials", t("Matériel et produits", "Equipment and materials", "الأدوات والمواد").get(l), "BULLETS");
-        d.rubric(f.values, "protocol", t("Mode opératoire", "Procedure", "طريقة العمل").get(l), "NUMBERED");
-        if (f.v("measures") || f.v("results") || hasImg(f.values, "measures") || hasImg(f.values, "results")) d.heading(t("Résultats", "Results", "النتائج").get(l));
-        d.content(f.values, "measures", "TABLE");
-        d.content(f.values, "results");
-        d.rubric(f.values, "analysis", t("Analyse et discussion", "Analysis and discussion", "التحليل والمناقشة").get(l));
+        const role = (ROLES[f.choice("supervisor_role")] || ROLES[0]).get(l);
+        const names = memberNames(f, TP_MEMBERS, f.v("authors"));
+        const d = cover(f, l, { title: f.v("title"), subtitle: f.v("course"), author: names, institution: f.v("institution"),
+            extra: labelled(role, f.v("supervisor") || f.v("cv_supervision")), date: f.v("date") });
+        applyMembers(d, f, TP_MEMBERS, l, f.v("authors"));
+        if (d.coverModel === "TP") {
+            d.banner = [f.v("course"), f.v("cv_group"), f.v("title"), f.v("date")].filter((x) => x).join("\n");
+            d.group = "";
+            d.supervisionLabel = role;
+            d.supervision = f.v("supervisor");
+            d.gradeBoxes = f.v("cv_grades") !== "1";
+            d.membersLabel = t("MEMBRES DU GROUPE", "GROUP MEMBERS", "أعضاء الفوج").get(l);
+            d.gradeLabel = t("NOTE FINALE", "FINAL MARK", "العلامة النهائية").get(l);
+            d.observationLabel = t("OBSERVATION", "COMMENTS", "ملاحظة").get(l);
+            d.yearLabel = t("Année académique", "Academic year", "السنة الجامعية").get(l);
+            d.tocTitle = t("TABLE DES MATIÈRES", "CONTENTS", "الفهرس").get(l);
+        }
+        d.pageBorder = f.cover && f.v("cv_border") === "1";
+        d.breakBeforeH1 = f.v("breaks") !== "1";
+        if (!d.cover) {
+            d.docTitle(f.v("title")); d.line(f.v("course"), "CENTER");
+            if (d.members.length) d.add(Block.table(d.memberHeader, d.members)); else d.line(lines(names).join(", "), "CENTER");
+            d.line(labelled(role, f.v("supervisor")), "CENTER"); d.line(f.v("date"), "CENTER");
+        }
+        d.rubric(f.values, "abstract", "ABSTRACT");
+        d.rubric(f.values, "resume", t("Résumé", "Summary", "ملخص").get(l));
+        d.rubric(f.values, "intro", L_INTRO.get(l));
+        d.rubric(f.values, "objectives", t("Objectifs", "Objectives", "الأهداف").get(l), "PARA", 2);
+        const equipment = f.items("equipment");
+        if (f.v("principle") || equipment.length || f.v("materials") || f.v("protocol")) {
+            d.heading(t("Matériels et méthodes", "Materials and methods", "الأدوات والطرق").get(l));
+            d.rubric(f.values, "principle", t("Principe", "Principle", "المبدأ").get(l), "PARA", 2);
+            if (equipment.length) {
+                d.heading(t("Matériels", "Materials", "الأدوات").get(l), 2);
+                for (const e of equipment) {
+                    const name = String(e.name || "").trim(), desc = String(e.desc || "").trim();
+                    d.add(Block.bullets([[name, desc].filter((x) => x).join(" : ")]));
+                    d.add(Block.slot(e.photo || "", name));
+                }
+            }
+            d.rubric(f.values, "materials", t("Matériels", "Materials", "الأدوات").get(l), "BULLETS", 2);
+            d.rubric(f.values, "protocol", t("Méthode", "Method", "الطريقة").get(l), "NUMBERED", 2);
+        }
+        const tables = f.items("tables");
+        if (tables.length || f.v("measures") || f.v("results") || f.v("analysis") || hasImg(f.values, "results") || hasImg(f.values, "analysis")) {
+            d.heading(t("Résultats et interprétation", "Results and interpretation", "النتائج والتفسير").get(l));
+            let n = 0;
+            for (const tb of tables) {
+                const rowsMode = String(tb.layout || "") !== "1";
+                const block = measureTable(rowsMode ? tb.data : tb.data_cols, rowsMode, tb.calc);
+                if (!block) continue;
+                n++;
+                const title = String(tb.title || "").trim();
+                d.add(Block.para(t("Tableau", "Table", "جدول").get(l) + " " + n + (title ? " : " + title : ""), "CENTER", true).size(10));
+                d.add(block);
+            }
+            d.content(f.values, "measures", "TABLE");
+            d.content(f.values, "results");
+            d.rubric(f.values, "analysis", t("Interprétation", "Interpretation", "التفسير").get(l), "PARA", 2);
+        }
+        d.rubric(f.values, "applications", t("Quelques applications", "Some applications", "بعض التطبيقات").get(l), "RICH");
         d.rubric(f.values, "conclusion", t("Conclusion", "Conclusion", "خاتمة").get(l));
+        d.rubric(f.values, "references", t("Bibliographie", "Bibliography", "المراجع").get(l), "BULLETS");
         return d;
     },
 };
@@ -276,6 +360,8 @@ const ACTIVITE = {
     },
 };
 
+const TPE_MEMBERS = membersGroup(t("Participants", "Participants", "المشاركون"));
+
 const TPE = {
     id: "tpe", module: "REPORTS", coverFields: COVER, defaultCoverModel: 1, supportsCover: true, defaultCover: true, formats: ALL,
     title: t("Exposé écrit / TPE", "Written report / essay", "عرض مكتوب / بحث"),
@@ -284,13 +370,13 @@ const TPE = {
         F("institution", L_INSTITUTION),
         F("title", t("Intitulé", "Heading", "العنوان"), { required: true, defT: t("EXPOSÉ DE …", "REPORT ON …", "عرض حول …") }),
         F("theme", t("Thème", "Topic", "الموضوع"), { required: true }),
-        F("authors", t("Participants", "Participants", "المشاركون"), { type: LIST, hint: H_AUTHORS }),
         date(),
         F("intro", L_INTRO, { type: ML }),
         F("conclusion", L_CONCLUSION, { type: ML }),
         F("references", t("Références", "References", "المراجع"), { type: LIST, hint: H_ONE_PER_LINE }),
     ],
     groups: [
+        TPE_MEMBERS,
         G("parts", t("Parties", "Parts", "الأجزاء"), t("Partie", "Part", "جزء"), [
             F("title", t("Titre de la partie", "Part title", "عنوان الجزء"), { required: true }),
             F("content", t("Contenu", "Content", "المحتوى"), { type: ML,
@@ -300,8 +386,13 @@ const TPE = {
     ],
     build(f, c) {
         const l = c.lang;
-        const d = cover(f, l, { title: f.v("title"), subtitle: f.v("theme"), author: f.v("authors"), institution: f.v("institution"), date: f.v("date") });
-        if (!d.cover) { d.docTitle(f.v("title")); d.line(f.v("theme"), "CENTER", true); d.line(lines(f.v("authors")).join(", "), "CENTER"); }
+        const d = cover(f, l, { title: f.v("title"), subtitle: f.v("theme"), author: memberNames(f, TPE_MEMBERS, f.v("authors")), institution: f.v("institution"), date: f.v("date") });
+        applyMembers(d, f, TPE_MEMBERS, l, f.v("authors"));
+        d.pageBorder = f.cover && f.v("cv_border") === "1";
+        if (!d.cover) {
+            d.docTitle(f.v("title")); d.line(f.v("theme"), "CENTER", true);
+            if (d.members.length) d.add(Block.table(d.memberHeader, d.members)); else d.line(lines(d.author).join(", "), "CENTER");
+        }
         d.rubric(f.values, "intro", L_INTRO.get(l));
         f.items("parts").forEach((p) => { d.heading(p.title || ""); d.content(p, "content", "RICH"); });
         d.rubric(f.values, "conclusion", L_CONCLUSION.get(l));
@@ -463,6 +554,8 @@ const MOTIVATION = {
 
 // ============================================================ 3. EXPOSÉS ET PRÉSENTATIONS
 
+const EXPOSE_MEMBERS = membersGroup(t("Présenté par", "Presented by", "تقديم"));
+
 const EXPOSE = {
     id: "expose", module: "SLIDES", formats: SLIDES,
     title: t("Exposé / présentation", "Talk / presentation", "عرض تقديمي"),
@@ -471,12 +564,12 @@ const EXPOSE = {
         F("institution", L_INSTITUTION),
         F("title", t("Titre de l'exposé", "Talk title", "عنوان العرض"), { required: true }),
         F("subtitle", L_SUBTITLE),
-        F("authors", t("Présenté par", "Presented by", "تقديم"), { type: LIST, hint: H_AUTHORS }),
         F("teacher", t("Sous la supervision de", "Supervised by", "تحت إشراف")),
         date(),
         F("closing", t("Diapositive de fin", "Closing slide", "الشريحة الأخيرة"), { defT: t("Merci de votre attention", "Thank you for your attention", "شكرًا على حسن انتباهكم") }),
     ],
     groups: [
+        EXPOSE_MEMBERS,
         G("slides", t("Diapositives", "Slides", "الشرائح"), t("Diapositive", "Slide", "شريحة"), [
             F("title", t("Titre de la diapositive", "Slide title", "عنوان الشريحة"), { required: true }),
             F("points", t("Points clés", "Key points", "النقاط الرئيسية"), { type: LIST, hint: H_ONE_PER_LINE }),
@@ -486,17 +579,20 @@ const EXPOSE = {
     build(f, c) {
         const d = base(f);
         d.title = f.v("title"); d.subtitle = f.v("subtitle"); d.institution = f.v("institution"); d.date = f.v("date");
-        d.author = [...lines(f.v("authors")), ...(f.v("teacher") ? [labelled(t("Supervision", "Supervisor", "إشراف").get(c.lang), f.v("teacher"))] : [])].join("\n");
+        const [mh, mr] = members(f, EXPOSE_MEMBERS, c.lang);
+        d.author = [...lines(memberNames(f, EXPOSE_MEMBERS, f.v("authors"))), ...(f.v("teacher") ? [labelled(t("Supervision", "Supervisor", "إشراف").get(c.lang), f.v("teacher"))] : [])].join("\n");
         for (const s of f.items("slides")) {
             const sl = new Slide(s.title || "", lines(s.points || ""));
             sl.imageRef = s[imgKey("points")] || "";
             if (sl.imageRef.trim()) sl.legend = s[capKey("points")] || "";
             d.slides.push(sl);
         }
-        const people = lines(f.v("authors"));
+        const people = lines(memberNames(f, EXPOSE_MEMBERS, f.v("authors")));
         const titles = f.items("slides").map((s) => String(s.title || "").trim()).filter((x) => x);
         let at = 0;
-        if (people.length >= 2) d.slides.splice(at++, 0, new Slide(t("NOMS DES PARTICIPANTS", "PARTICIPANTS", "أسماء المشاركين").get(c.lang), people));
+        const partTitle = t("NOMS DES PARTICIPANTS", "PARTICIPANTS", "أسماء المشاركين").get(c.lang);
+        if (mr.length && mh.length) { const ps = new Slide(partTitle, []); ps.tableHeader = mh; ps.tableRows = mr; d.slides.splice(at++, 0, ps); }
+        else if (people.length >= 2) d.slides.splice(at++, 0, new Slide(partTitle, people));
         if (titles.length >= 3) d.slides.splice(at, 0, new Slide(t("PLAN DE TRAVAIL", "OUTLINE", "خطة العمل").get(c.lang), titles));
         if (f.v("closing")) d.slides.push(Slide.statement(f.v("closing")));
         return d;
@@ -748,7 +844,7 @@ const CHART = {
     description: t("Courbe, barres ou secteurs à partir de tes données", "Line, bar or pie chart from your data", "منحنى أو أعمدة أو دائرة من بياناتك"),
     fields: [
         F("title", t("Titre du graphique", "Chart title", "عنوان الرسم البياني"), { required: true }),
-        F("type", t("Type de graphique", "Chart type", "نوع الرسم البياني"), { type: "CHOICE", options: [t("Courbe", "Line", "منحنى"), t("Barres", "Bars", "أعمدة"), t("Secteurs", "Pie", "دائرة")] }),
+        F("type", t("Type de graphique", "Chart type", "نوع الرسم البياني"), { type: "CHOICE", options: CHART_TYPES }),
         F("x_label", t("Nom de l'axe horizontal (X)", "Horizontal axis name (X)", "اسم المحور الأفقي (س)")),
         F("y_label", t("Nom de l'axe vertical (Y)", "Vertical axis name (Y)", "اسم المحور العمودي (ص)")),
         F("comment", t("Commentaire / interprétation", "Comment / interpretation", "تعليق / تفسير"), { type: ML }),

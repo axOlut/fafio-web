@@ -27,15 +27,31 @@ const map = {
         "signatory_function": t("Directrice des Ressources Humaines", "Human Resources Director", "مديرة الموارد البشرية"),
 
         // ---------------------------------------------------------------- Compte rendu de TP
-        "tp.course": t("Physique générale (PHY 101)", "General Physics (PHY 101)", "الفيزياء العامة (PHY 101)"),
-        "tp.title": t("Dosage acido-basique d'une solution d'acide chlorhydrique", "Acid-base titration of a hydrochloric acid solution", "معايرة حمض-قاعدة لمحلول حمض الهيدروكلوريك"),
         "tp.objectives": t("Déterminer la concentration d'une solution d'acide chlorhydrique par titrage avec une solution de soude de concentration connue.", "Determine the concentration of a hydrochloric acid solution by titration with a sodium hydroxide solution of known concentration.", "تحديد تركيز محلول حمض الهيدروكلوريك بالمعايرة بمحلول هيدروكسيد الصوديوم معلوم التركيز."),
         "tp.principle": t("Au point d'équivalence, la quantité d'ions OH⁻ versée est égale à la quantité d'ions H₃O⁺ initialement présents : Ca × Va = Cb × Vb.", "At equivalence, the amount of OH⁻ added equals the amount of H₃O⁺ initially present: Ca × Va = Cb × Vb.", "عند نقطة التكافؤ، كمية أيونات OH⁻ المضافة تساوي كمية أيونات H₃O⁺ الموجودة: Ca × Va = Cb × Vb."),
         "tp.materials": t("Burette graduée de 25 mL\nBécher de 100 mL\npH-mètre\nAgitateur magnétique", "25 mL graduated burette\n100 mL beaker\npH meter\nMagnetic stirrer", "سحاحة مدرجة 25 مل\nكأس 100 مل\nمقياس pH\nخلاط مغناطيسي"),
         "tp.protocol": t("Rincer et remplir la burette avec la soude\nPrélever 10 mL d'acide dans le bécher\nVerser la soude mL par mL en relevant le pH", "Rinse and fill the burette with NaOH\nPour 10 mL of acid into the beaker\nAdd NaOH 1 mL at a time and record the pH", "اشطف السحاحة واملأها بالصودا\nخذ 10 مل من الحمض في الكأس\nأضف الصودا ملًا ملًا وسجل pH"),
         "tp.measures": t("Volume (mL) ; pH\n0 ; 1,2\n5 ; 1,8\n10 ; 7,0\n15 ; 11,9", "Volume (mL) ; pH\n0 ; 1.2\n5 ; 1.8\n10 ; 7.0\n15 ; 11.9", "الحجم (مل) ; pH\n0 ; 1.2\n5 ; 1.8\n10 ; 7.0"),
-        "tp.results": t("Le volume à l'équivalence est Vb = 10,0 mL, d'où Ca = 0,10 mol/L.", "The equivalence volume is Vb = 10.0 mL, so Ca = 0.10 mol/L.", "حجم التكافؤ Vb = 10.0 مل، ومنه Ca = 0.10 مول/ل."),
-        "tp.analysis": t("La valeur trouvée est proche de la valeur attendue (0,1 mol/L). L'écart s'explique par la lecture de la burette…", "The value found is close to the expected 0.1 mol/L. The gap comes from reading the burette…", "القيمة المحصلة قريبة من المتوقعة (0.1 مول/ل). ويُفسَّر الفرق بقراءة السحاحة…"),
+
+        "tp.course": t("TP Physique 232", "Physics lab 232", "أعمال تطبيقية فيزياء 232"),
+        "tp.title": t("Plan incliné", "Inclined plane", "المستوى المائل"),
+        "tp.supervisor": t("Dr WAMBA Claudin", "Dr Claudin WAMBA", "د. كلودان وامبا"),
+        "tp.abstract": t("This experiment investigates the motion of an object on an inclined plane…", "This experiment investigates the motion of an object on an inclined plane…", "This experiment investigates the motion of an object on an inclined plane…"),
+        "tp.resume": t("Cette manipulation porte sur le mouvement d'un objet sur un plan incliné, avec pour objectif de vérifier…", "This experiment studies the motion of an object on an inclined plane, in order to check…", "تتناول هذه التجربة حركة جسم على مستوى مائل بهدف التحقق من…"),
+        "tp.intro": t("L'histoire du plan incliné est liée à celle de la mécanique. Galilée l'a utilisé pour étudier la chute des corps…", "The inclined plane is linked to the history of mechanics. Galileo used it to study falling bodies…", "يرتبط المستوى المائل بتاريخ الميكانيك، وقد استعمله غاليلي لدراسة سقوط الأجسام…"),
+        "tp.results": t("On obtient α = (11,12 ± 0,01)° et, d'après la pente du graphe, a = 0,70 m.s⁻².", "We find α = (11.12 ± 0.01)° and, from the slope, a = 0.70 m/s².", "نحصل على α = 11.12° ومن الميل a = 0.70 م/ث²."),
+        "tp.analysis": t("La valeur expérimentale est inférieure à la valeur théorique à cause des frottements…", "The measured value is lower than the theoretical one because of friction…", "القيمة التجريبية أقل من النظرية بسبب الاحتكاك…"),
+        "tp.applications": t("- Routes et rampes d'accès\n- Tapis roulants\n- Systèmes de freinage", "- Roads and ramps\n- Conveyor belts\n- Braking systems", "- الطرق والمنحدرات\n- السيور المتحركة\n- أنظمة الكبح"),
+        "tp.references": t("TOPO PHYSIQUE L2 S2\nhttps://fr.khanacademy.org", "Physics handout L2 S2\nhttps://www.khanacademy.org", "مطبوعة الفيزياء\nhttps://www.khanacademy.org"),
+        "members.nom": t("NGUEDI BESSALA", "NGUEDI BESSALA", "نغيدي بيسالا"),
+        "members.prenom": t("Joseph", "Joseph", "جوزيف"),
+        "members.matricule": t("23Q2192", "23Q2192", "23Q2192"),
+        "equipment.name": t("Pied à coulisse numérique", "Digital calliper", "قدمة رقمية"),
+        "equipment.desc": t("Mesurer le diamètre de la bille", "Measure the ball's diameter", "قياس قطر الكرية"),
+        "tables.title": t("Mesures sans frottement", "Measurements without friction", "قياسات دون احتكاك"),
+        "tables.data": t("h (m) ; 0,11 ; 0,155 ; 0,2\nt (s) ; 1,17 ; 1,32 ; 1,59", "h (m) ; 0.11 ; 0.155 ; 0.2\nt (s) ; 1.17 ; 1.32 ; 1.59", "h (m) ; 0.11 ; 0.155 ; 0.2\nt (s) ; 1.17 ; 1.32 ; 1.59"),
+        "tables.data_cols": t("h (m) ; t (s)\n0,11 ; 1,17\n0,155 ; 1,32", "h (m) ; t (s)\n0.11 ; 1.17\n0.155 ; 1.32", "h (m) ; t (s)\n0.11 ; 1.17\n0.155 ; 1.32"),
+        "tables.calc": t("t² (s²) = t^2", "t² (s²) = t^2", "t² (s²) = t^2"),
 
         // ---------------------------------------------------------------- Rapport de stage
         "stage.company": t("Orange Cameroun – Direction technique, Douala", "Orange Cameroon – Technical department, Douala", "أورانج الكاميرون – المديرية التقنية، دوالا"),
@@ -161,7 +177,8 @@ const map = {
 
         // ---------------------------------------------------------------- Couverture officielle
         "cv_lab": t("Laboratoire d'énergie et des systèmes électriques", "Energy and electrical systems laboratory", "مخبر الطاقة والأنظمة الكهربائية"),
-        "cv_group": t("Groupe mercredi 7h00 – 10h00", "Wednesday group 7:00 – 10:00", "فوج الأربعاء 7:00 – 10:00"),
+        "cv_group": t("Lundi 13h – 16h", "Monday 1 pm – 4 pm", "الإثنين 13:00 – 16:00"),
+        "cv_info": t("OPTION : Physique fondamentale", "OPTION: Fundamental physics", "التخصص: الفيزياء الأساسية"),
         "cv_supervision": t("Pr ATANGANA Marc\nDr MBELLE Paul", "Prof. Marc ATANGANA\nDr Paul MBELLE", "أ.د. مارك أتانغانا\nد. بول مبيلي"),
         "cv_year": t("2026/2027", "2026/2027", "2026/2027"),
 

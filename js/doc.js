@@ -37,7 +37,7 @@ export class Block {
     constructor(type) {
         this.type = type; this.text = ""; this.level = 1; this.align = "LEFT"; this.bold = false; this.italic = false;
         this.sizePt = 0; this.accent = false; this.muted = false; this.items = []; this.header = []; this.rows = [];
-        this.png = null; this.pxW = 0; this.pxH = 0; this.imgType = "png"; this.lines = 1; this.ref = ""; this.legend = null;
+        this.png = null; this.pxW = 0; this.pxH = 0; this.imgType = "png"; this.lines = 1; this.ref = ""; this.legend = null; this.rowHeader = false;
     }
     static heading(text, level) { const b = new Block("HEADING"); b.text = safe(text); b.level = level; if (level === 0) b.align = "CENTER"; return b; }
     static para(text, align, bold) {
@@ -73,12 +73,13 @@ export class Slide {
     constructor(title, bullets) {
         this.title = safe(title); this.bullets = clean(bullets); this.png = null; this.pxW = 0; this.pxH = 0;
         this.imgType = "png"; this.caption = ""; this.imageRef = ""; this.legend = null; this.statement = false;
+        this.tableHeader = []; this.tableRows = [];
     }
     static statement(text) { const s = new Slide(text, []); s.statement = true; return s; }
 }
 
 const UNNUMBERED = ["introduction", "conclusion", "références", "references", "reference", "bibliographie", "bibliography",
-    "remerciements", "acknowledg", "annexe", "appendix", "résumé", "sommaire", "plan de travail",
+    "remerciements", "acknowledg", "annexe", "appendix", "résumé", "abstract", "sommaire", "plan de travail",
     "مقدمة", "خاتمة", "المراجع", "شكر", "ملخص"];
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"];
 
@@ -88,6 +89,9 @@ export class Doc {
         this.coverModel = "SIMPLE"; this.headerLeft = ""; this.headerRight = ""; this.logoLeftRef = ""; this.logoRightRef = "";
         this.logoLeft = null; this.logoRight = null; this.supervision = ""; this.group = ""; this.infoLines = "";
         this.participantsLabel = "NOMS DES PARTICIPANTS :"; this.themeLabel = "THEME"; this.supervisionLabel = "Sous la supervision de";
+        this.memberHeader = []; this.members = []; this.membersLabel = "MEMBRES DU GROUPE"; this.banner = "";
+        this.gradeBoxes = false; this.gradeLabel = "NOTE FINALE"; this.observationLabel = "OBSERVATION"; this.yearLabel = "Année académique";
+        this.pageBorder = false; this.breakBeforeH1 = false;
         this.toc = false; this.tocTitle = "PLAN DE TRAVAIL"; this.numberHeadings = false; this.pageWordFooter = false;
         this.style = "MODERN"; this.theme = new DocTheme(); this.rtl = false; this.landscape = false;
         this.blocks = []; this.slides = [];

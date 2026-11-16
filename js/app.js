@@ -6,6 +6,7 @@ import { TYPES, MODULES, typeById, forModule, allowsImage } from "./forms/catalo
 import { blank, isVisible, imgKey, capKey, Form } from "./forms/model.js";
 import { example } from "./forms/examples.js";
 import { THEMES, FONTS, themeOf } from "./forms/themes.js";
+import { columnsOn } from "./forms/science.js";
 import { Drafts, Images, Settings } from "./data/storage.js";
 import { exportFile, preview, sections, fileName, EXT, MIME } from "./export/exporter.js";
 import { css } from "./export/canvasutil.js";
@@ -313,9 +314,11 @@ async function formScreen(id) {
     // --- thème et police
     function themePicker() {
         const cur = themeOf(data).id;
-        const row = h("div", { class: "themes" }, THEMES.map((t) => {
+        const slides = type.module === "SLIDES";
+        const list = slides ? THEMES.filter((t) => t.hasSlide) : THEMES;
+        const row = h("div", { class: "themes" + (slides ? " wide" : "") }, list.map((t) => {
             const th = h("div", { class: "th" });
-            if (t.hasCover || t.hasSlide) th.appendChild(h("img", { src: `assets/themes/${t.id}_thumb.jpg`, alt: "", loading: "lazy" }));
+            if (t.hasCover || t.hasSlide) th.appendChild(h("img", { src: `assets/themes/${t.id}_${slides ? "sthumb" : "thumb"}.jpg`, alt: "", loading: "lazy" }));
             else th.appendChild(h("div", { class: "plain" }, h("i"), h("i"), h("i"), h("i", { style: { width: "70%" } }), h("i")));
             th.appendChild(h("div", { class: "dots" }, h("b", { style: { background: css(t.primary) } }), h("b", { style: { background: css(t.accent) } })));
             if (t.id === cur) th.appendChild(h("div", { class: "check" }, "✓"));
@@ -323,7 +326,8 @@ async function formScreen(id) {
                 onClick: () => { data.theme = t.id; changed(); rerender(); } }, th, h("div", { class: "nm" }, tr(t.name)));
         }));
         requestAnimationFrame(() => { const on = row.querySelector(".theme.on"); if (on) row.scrollLeft = on.offsetLeft - 16; });
-        return h("div", {}, h("div", { class: "title-m" }, s("theme_title")), h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("theme_sub")), row);
+        return h("div", {}, h("div", { class: "title-m" }, s(slides ? "slide_theme_title" : "theme_title")),
+            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s(slides ? "slide_theme_sub" : "theme_sub")), row);
     }
 
     function fontPicker() {
@@ -342,6 +346,18 @@ async function formScreen(id) {
     function groupInput(g) {
         const items = data.groups[g.id] || (data.groups[g.id] = []);
         const out = h("div", {}, h("div", { class: "group-title" }, tr(g.label)));
+        if (g.columns && g.columns.length) {
+            const on = columnsOn(data.values, g);
+            out.appendChild(h("div", { class: "small muted", style: { marginBottom: "6px" } }, s("columns_shown")));
+            out.appendChild(h("div", { class: "chips", style: { marginBottom: "12px" } }, g.columns.map((col, i) => h("button", {
+                type: "button", class: "chip" + (on[i] ? " on" : ""),
+                onClick: () => {
+                    const next = on.slice(); next[i] = !next[i];
+                    if (!next.some((x) => x)) return;
+                    setValue(`${g.id}_cols`, next.map((x) => (x ? "1" : "0")).join("")); rerender();
+                },
+            }, (on[i] ? "✓ " : "") + tr(col)))));
+        }
         items.forEach((item, index) => {
             const card = h("div", { class: "card", style: { marginBottom: "12px" } },
                 h("div", { class: "item-head" },

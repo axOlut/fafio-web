@@ -81,6 +81,7 @@ class PagePainter {
             if (d.coverModel === "EXPOSE") this.coverExpose();
             else if (d.coverModel === "TP") this.coverTp();
             else this.cover();
+            if (d.pageBorder) this.pageBorder();
         }
         this.labels = d.headingLabels();
         if (d.toc) this.tocPage();
@@ -334,9 +335,11 @@ class PagePainter {
             yy += this.centered(doc.title.toUpperCase(), this.plain(15, true, this.ink, null, true), yy) + 12;
             if (themeText) yy += this.centered(themeText, this.plain(12, false), yy) + 10;
         }
-        const people = docLines(doc.author), sups = docLines(doc.supervision);
-        if (hasBg && (people.length || sups.length)) {
+        const useTable = doc.members.length > 0 && doc.memberHeader.length > 0;
+        const people = useTable ? [] : docLines(doc.author), sups = docLines(doc.supervision);
+        if (hasBg && (useTable || people.length || sups.length)) {
             let h = 16;
+            if (useTable) h += 20 + this.membersTable(0, contentW, true) + 4;
             if (people.length) h += 20 + people.reduce((s, p) => s + this.layout("➢  " + p.toUpperCase(), this.plain(10.5, true), contentW - 14, "LEFT").height + 2, 0);
             if (sups.length) h += 24 + sups.length * 16;
             this.card(left - 8, yy + 18, contentW + 16, h);
@@ -349,6 +352,12 @@ class PagePainter {
                 const l = this.layout("➢  " + p.toUpperCase(), this.plain(10.5, true), contentW - 14, "LEFT");
                 this.drawAt(l, left + 14, yy); yy += l.height + 2;
             }
+        }
+        if (useTable) {
+            yy += 26;
+            const lab = this.layout(doc.participantsLabel, this.plain(10.5, true, this.ink, null, true), contentW, "LEFT");
+            this.drawAt(lab, left, yy); yy += lab.height + 8;
+            yy += this.membersTable(yy, contentW);
         }
         if (sups.length) {
             yy += 24;
@@ -385,55 +394,115 @@ class PagePainter {
         drawText(c, text, cx, top + h / 2 + 5, paint(14, { family: SANS, bold: true, color: "#fff", align: "center" }));
     }
 
+    /** Tableau NOM | PRÉNOM | MATRICULE. Renvoie la hauteur (dessine seulement si measureOnly est faux). */
+    membersTable(yy, width, measureOnly = false) {
+        const doc = this.doc;
+        const cols = doc.memberHeader.length;
+        if (!cols || !doc.members.length) return 0;
+        const x0 = this.left + (this.contentW - width) / 2, colW = width / cols, pad = 4;
+        let y0 = yy;
+        [doc.memberHeader, ...doc.members].forEach((r, ri) => {
+            const ls = Array.from({ length: cols }, (_, i) => this.layout(r[i] || "", this.plain(10.5, ri === 0), colW - 2 * pad, i === 0 && ri > 0 ? "LEFT" : "CENTER"));
+            const h = Math.max(...ls.map((l) => l.height)) + 2 * pad;
+            if (!measureOnly) for (let i = 0; i < cols; i++) {
+                const x = doc.rtl ? x0 + width - (i + 1) * colW : x0 + i * colW;
+                this.rect(x, y0, x + colW, y0 + h, ri === 0 ? this.lightColor : WHITE);
+                this.strokeRect(x, y0, x + colW, y0 + h, this.ink, 0.7);
+                this.drawAt(ls[i], x + pad, y0 + pad);
+            }
+            y0 += h;
+        });
+        return y0 - yy;
+    }
+
+    pageBorder() {
+        const { pw, ph } = this;
+        this.strokeRect(18, 18, pw - 18, ph - 18, this.accent, 3);
+        this.strokeRect(24, 24, pw - 24, ph - 24, this.accent, 1);
+    }
+
+    /** Ruban (bannière enroulée) du titre. */
+    scroll(x, y0, w, h, color) {
+        const dark = this.darken(color);
+        this.rrect(x - 6, y0 + 10, x + 16, y0 + h + 14, 11, dark);
+        this.rrect(x + w - 16, y0 - 14, x + w + 6, y0 + h - 10, 11, dark);
+        this.rrect(x + 4, y0, x + w - 4, y0 + h, 8, color);
+        this.rrectStroke(x + 4, y0, x + w - 4, y0 + h, 8, dark, 1.2);
+    }
+
     coverTp() {
         this.newPage(false);
         this.drawCoverBg();
-        const { doc, ph, left, contentW, accent, hasBg, ink } = this;
+        const { doc, ph, left, contentW, hasBg, ink } = this;
         const side = contentW * 0.38, mid = contentW - 2 * side;
         let yy = 40;
         if (hasBg) {
-            const hh = Math.max(this.measureColumn(doc.headerLeft, side, 7), this.measureColumn(doc.headerRight, side, 7), 110) + 16;
+            const hh = Math.max(this.measureColumn(doc.headerLeft, side, 7), this.measureColumn(doc.headerRight, side, 7), 100) + 16;
             this.card(left - 8, yy - 8, contentW + 16, hh);
         }
         const hl = this.headerColumn(doc.headerLeft, left, side, yy, 7);
         const hr = this.headerColumn(doc.headerRight, left + side + mid, side, yy, 7);
-        const lg = this.drawLogo(doc.logoLeft || doc.logoRight, left + side + mid / 2, yy + 10, mid - 10, 100);
-        yy += Math.max(hl, hr, lg + 10) + 10;
-        this.line(left, yy, left + contentW, yy, ink, 1.4);
-        yy += 22;
+        const lg = this.drawLogo(doc.logoLeft || doc.logoRight, left + side + mid / 2, yy + 6, mid - 10, 90);
+        yy += Math.max(hl, hr, lg + 6) + 14;
         const labs = docLines(doc.institution);
         if (hasBg && labs.length) {
             const h = labs.reduce((s, l) => s + this.layout(l.toUpperCase(), this.plain(10.5, true), contentW, "CENTER").height + 2, 0) + 12;
             this.card(left + contentW * 0.05, yy - 6, contentW * 0.9, h);
         }
         for (const l of labs) yy += this.centered(l.toUpperCase(), this.plain(10.5, true), yy) + 2;
-        yy += 26;
-        const boxW = contentW * 0.9, boxX = left + (contentW - boxW) / 2;
-        const txt = [doc.subtitle, doc.title].filter((s) => s.trim()).map((s) => s.toUpperCase()).join("\n");
+        yy += 24;
+        let banner = docLines(doc.banner);
+        if (!banner.length) banner = [doc.subtitle, doc.title].filter((x) => x.trim());
         const modern = this.theme.id === "modern";
-        const tl = this.layout(txt, this.plain(13, true, modern ? 0x0B1F4D : accent), boxW - 24, "CENTER");
-        const boxH = tl.height + 24;
-        this.rrect(boxX, yy, boxX + boxW, yy + boxH, 10, modern ? 0x4472C4 : this.lightColor);
-        this.rrectStroke(boxX, yy, boxX + boxW, yy + boxH, 10, modern ? 0x2F5496 : accent, 1.2);
-        this.drawAt(tl, boxX + 12, yy + 12);
-        yy += boxH + 30;
+        const boxW = contentW * 0.82, boxX = left + (contentW - boxW) / 2;
+        const tl = this.layout(banner.map((x) => x.toUpperCase()).join("\n"), this.plain(13, true, WHITE, null, true), boxW - 44, "CENTER");
+        const boxH = tl.height + 30;
+        this.scroll(boxX, yy, boxW, boxH, modern ? 0x1F5F7F : this.accent);
+        this.drawAt(tl, boxX + 22, yy + 15);
+        yy += boxH + 24;
         if (doc.group.trim()) {
             if (hasBg) {
-                const gh = this.layout(doc.group.toUpperCase(), this.plain(13, true), contentW, "CENTER").height + 12;
+                const gh = this.layout(doc.group.toUpperCase(), this.plain(12, true), contentW, "CENTER").height + 12;
                 this.card(left + contentW * 0.2, yy - 6, contentW * 0.6, gh);
             }
-            yy += this.centered(doc.group.toUpperCase(), this.plain(13, true), yy) + 26;
+            yy += this.centered(doc.group.toUpperCase(), this.plain(12, true), yy) + 18;
         }
+        const hasMembers = doc.members.length > 0 && doc.memberHeader.length > 0;
+        const tableW = hasBg ? contentW * 0.92 : contentW;
         const infos = docLines(doc.infoLines);
-        if (hasBg && infos.length) {
-            const ih = infos.reduce((s, l) => s + this.layout(l.toUpperCase(), this.plain(10.5, true), contentW - 50, "LEFT").height + 9, 0) + 12;
-            this.card(left + 30, yy - 6, contentW - 60, ih);
+        const sup = docLines(doc.supervision).join(", ");
+        const supText = [{ text: doc.supervisionLabel + " : " }, { text: sup, bold: true }];
+        const extras = docLines(doc.extra);
+        if (hasBg && (hasMembers || infos.length || sup || extras.length)) {
+            let h = 16;
+            if (hasMembers) h += this.layout(doc.membersLabel, this.plain(10.5, true), contentW, "CENTER").height + 6 + this.membersTable(0, tableW, true) + 8;
+            h += infos.reduce((s, l) => s + this.layout(l.toUpperCase(), this.plain(10.5, true), contentW - 20, "LEFT").height + 6, 0);
+            if (sup) h += this.layout(supText, this.plain(13, false), contentW, "CENTER").height + 12;
+            h += extras.reduce((s, l) => s + this.layout(l, this.plain(10.5, true), contentW, "CENTER").height + 4, 0);
+            this.card(left - 8, yy - 8, contentW + 16, h);
         }
-        for (const l of infos) { const t = this.layout(l.toUpperCase(), this.plain(10.5, true), contentW - 50, "LEFT"); this.drawAt(t, left + 50, yy); yy += t.height + 9; }
-        yy += 10;
-        for (const e of docLines(doc.extra)) yy += this.centered(e, this.plain(10.5, true), yy) + 4;
+        if (hasMembers) {
+            yy += this.centered(doc.membersLabel, this.plain(10.5, true), yy) + 6;
+            yy += this.membersTable(yy, tableW) + 8;
+        }
+        for (const l of infos) { const t = this.layout(l.toUpperCase(), this.plain(10.5, true), contentW - 20, "LEFT"); this.drawAt(t, left + 10, yy); yy += t.height + 6; }
+        if (sup) { yy += 12; yy += this.centered(supText, this.plain(13, false), yy); }
+        for (const e of extras) yy += this.centered(e, this.plain(10.5, true), yy) + 4;
+        if (doc.gradeBoxes) {
+            yy += 26;
+            const bw = (contentW - 30) / 2, bh = 95;
+            drawText(this.c, doc.gradeLabel, left, yy, this.plain(10.5, false));
+            drawText(this.c, doc.observationLabel, left + contentW, yy, { ...this.plain(10.5, false), align: "right" });
+            yy += 8;
+            for (const x of [left, left + contentW - bw]) { this.rect(x, yy, x + bw, yy + bh, WHITE); this.strokeRect(x, yy, x + bw, yy + bh, ink, 0.9); }
+            yy += bh;
+        }
         if (doc.date.trim()) {
-            if (hasBg) this.ribbon(doc.date, ph - 110); else this.centered(doc.date, this.plain(11.5, true, ink, null, true), ph - 100);
+            const txt = doc.yearLabel + " : " + doc.date;
+            const p = { ...this.plain(12, true), align: "right" };
+            const by = ph - 70;
+            if (hasBg) { const tw = measure(this.c, txt, p); this.card(left + contentW - tw - 12, by - 18, tw + 20, 26); }
+            drawText(this.c, txt, left + contentW, by, p);
         }
     }
 
@@ -512,6 +581,7 @@ class PagePainter {
         const { left, contentW, accent, doc } = this;
         const st = this.theme.heading;
         const size = 14.5;
+        if (doc.breakBeforeH1 && this.y > this.top + 1) this.newPage();
         this.y += 14;
         const textColor = st === "BAND" ? WHITE : accent;
         let text = st === "CLASSIC" ? label.toUpperCase() : label;
@@ -582,10 +652,11 @@ class PagePainter {
         const colW = contentW / cols, pad = 5, size = cols > 5 ? 8.5 : 9.5;
         const cells = (values, bold, color) => Array.from({ length: cols }, (_, i) => this.layout(values[i] || "", this.tp(size, bold, false, color), colW - 2 * pad, "LEFT"));
         const rowHeight = (ls) => Math.max(20, Math.max(...ls.map((l) => l.height)) + 2 * pad);
-        const drawRow = (ls, h, bg) => {
+        const drawRow = (ls, h, bg, firstAccent = false) => {
             for (let i = 0; i < cols; i++) {
                 const x = doc.rtl ? left + contentW - (i + 1) * colW : left + i * colW;
-                if (bg != null) this.rect(x, this.y, x + colW, this.y + h, bg);
+                if (firstAccent && i === 0) this.rect(x, this.y, x + colW, this.y + h, this.accent);
+                else if (bg != null) this.rect(x, this.y, x + colW, this.y + h, bg);
                 this.strokeRect(x, this.y, x + colW, this.y + h, 0xD1D5DB, 0.6);
                 this.drawAt(ls[i], x + pad, this.y + pad);
             }
@@ -597,10 +668,12 @@ class PagePainter {
         this.ensure(headerH + 22);
         if (header) drawRow(header, headerH, this.accent);
         b.rows.forEach((r, idx) => {
-            const ls = cells(r, false, this.ink);
+            const ls = b.rowHeader
+                ? Array.from({ length: cols }, (_, i) => this.layout(r[i] || "", this.tp(size, i === 0, false, i === 0 ? WHITE : this.ink), colW - 2 * pad, i === 0 ? "LEFT" : "CENTER"))
+                : cells(r, false, this.ink);
             const h = rowHeight(ls);
             if (this.y + h > this.bottom) { this.newPage(); if (header) drawRow(header, headerH, this.accent); }
-            drawRow(ls, h, idx % 2 === 1 ? this.lightColor : null);
+            drawRow(ls, h, !b.rowHeader && idx % 2 === 1 ? this.lightColor : null, b.rowHeader);
         });
         this.y += 10;
     }
@@ -730,6 +803,26 @@ class SlidePainter {
         this.lay(c, s.title, this.tp(34, accent, fonts.head), w - 160, "CENTER").draw(c, 80, 230);
     }
 
+    slideTable(c, s, x0, y0, width) {
+        const cols = s.tableHeader.length, colW = width / cols, size = s.tableRows.length > 8 ? 12 : 15;
+        let y = y0;
+        const rows = [s.tableHeader, ...s.tableRows];
+        for (let ri = 0; ri < rows.length; ri++) {
+            const r = rows[ri];
+            const ls = Array.from({ length: cols }, (_, i) => this.lay(c, r[i] || "", this.tp(size, ri === 0 ? WHITE : 0x1F2937, ri === 0 ? this.fonts.bodyBold : this.fonts.body), colW - 12, "LEFT"));
+            const rh = Math.max(...ls.map((l) => l.height)) + 12;
+            if (y + rh > this.h - 40) return;
+            for (let i = 0; i < cols; i++) {
+                const x = this.doc.rtl ? x0 + width - (i + 1) * colW : x0 + i * colW;
+                c.fillStyle = css(ri === 0 ? this.accent : ri % 2 === 0 ? this.doc.theme.light : WHITE);
+                c.fillRect(x, y, colW, rh);
+                c.strokeStyle = "#D1D5DB"; c.lineWidth = 0.8; c.strokeRect(x, y, colW, rh);
+                ls[i].draw(c, x + 6, y + 6);
+            }
+            y += rh;
+        }
+    }
+
     content(s) {
         const { doc, w, h, accent, fonts } = this;
         const c = this.start();
@@ -755,6 +848,7 @@ class SlidePainter {
             else { drawText(c, doc.theme.bullet, left, y + l.getLineBaseline(0), bp); l.draw(c, left + 24, y); }
             y += l.height + 10;
         }
+        if (s.tableRows.length && s.tableHeader.length) this.slideTable(c, s, left, y, w - 2 * left);
         if (hasImg) {
             const boxX = s.bullets.length ? left + textW + 32 : left;
             const boxW = s.bullets.length ? w - left - boxX : w - 2 * left;

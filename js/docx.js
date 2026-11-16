@@ -102,7 +102,7 @@ export function writeDocx(doc) {
                 .append(doc.landscape ? " w:orient=\"landscape\"" : "").append("/>")
                 .append("<w:pgMar w:top=\"").append(m).append("\" w:right=\"").append(m).append("\" w:bottom=\"").append(m)
                 .append("\" w:left=\"").append(m).append("\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/>")
-                .append(doc.cover ? "<w:titlePg/>" : "")
+                .append(doc.cover && !doc.pageBorder ? "<w:titlePg/>" : "")
                 .append("</w:sectPr></w:body></w:document>");
         return b.toString();
     }
@@ -128,7 +128,7 @@ export function writeDocx(doc) {
         if (!doc.date.isEmpty()) {
             p(b, pPr("center", 600, 0, null), run(doc.date, false, false, 22, "6B7280", bodyFont));
         }
-        b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
+        coverEnd(b);
     }
 
     // ------------------------------------------------------------ Couvertures officielles
@@ -136,6 +136,24 @@ export function writeDocx(doc) {
     let TNR = "Times New Roman";
 
     /** Cellule de tableau sans bordure. */
+    /** Fin de la page de garde : saut de page, ou section à part quand elle a sa bordure. */
+    function coverEnd(b) {
+        if (!doc.pageBorder) { b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>"); return; }
+        b.append("<w:p><w:pPr><w:sectPr>").append(pageSize()).append(pageBorders()).append("</w:sectPr></w:pPr></w:p>");
+    }
+
+    function pageSize() {
+        let w = doc.landscape ? 16838 : 11906, h = doc.landscape ? 11906 : 16838;
+        let m = doc.landscape ? 1134 : 1418;
+        return "<w:pgSz w:w=\"" + w + "\" w:h=\"" + h + "\"" + (doc.landscape ? " w:orient=\"landscape\"" : "") + "/>"
+                + "<w:pgMar w:top=\"" + m + "\" w:right=\"" + m + "\" w:bottom=\"" + m + "\" w:left=\"" + m + "\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/>";
+    }
+
+    function pageBorders() {
+        let bd = "w:val=\"thinThickSmallGap\" w:sz=\"24\" w:space=\"24\" w:color=\"" + accent + "\"";
+        return "<w:pgBorders w:offsetFrom=\"page\"><w:top " + bd + "/><w:left " + bd + "/><w:bottom " + bd + "/><w:right " + bd + "/></w:pgBorders>";
+    }
+
     function hasBg() {
         return doc.theme.coverBg != null;
     }
@@ -197,8 +215,8 @@ export function writeDocx(doc) {
         let img = doc.theme.coverBg;
         if (img == null) return "";
         let idx = addImage(img.data, img.type);
-        let cx = (doc.landscape ? 16838 : 11906) * 635;
-        let cy = (doc.landscape ? 11906 : 16838) * 635;
+        let cx = ~~(doc.landscape ? 16838 : 11906) * 635;
+        let cy = ~~(doc.landscape ? 11906 : 16838) * 635;
         let id = drawingId++;
         return "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"20\" w:lineRule=\"exact\"/></w:pPr><w:r><w:drawing>"
                 + "<wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"0\" behindDoc=\"1\" locked=\"1\" layoutInCell=\"1\" allowOverlap=\"1\">"
@@ -232,6 +250,57 @@ export function writeDocx(doc) {
                 + "<w:tr><w:tc><w:tcPr><w:tcW w:w=\"" + w + "\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"FFFFFF\"/></w:tcPr>" + inner + "</w:tc></w:tr></w:tbl>";
     }
 
+    /** Tableau NOM | PRÉNOM | MATRICULE de la couverture (colonnes choisies par l'utilisateur). */
+    function membersTable(widthRatio) {
+        let cols = doc.memberHeader.length;
+        if (cols == 0 || doc.members.isEmpty()) return "";
+        let w = ~~(textWidth * widthRatio), colW = Math.floor(w / cols);
+        let bd = "w:val=\"single\" w:sz=\"6\" w:space=\"0\" w:color=\"000000\"";
+        let t = new SB("<w:tbl><w:tblPr><w:tblW w:w=\"" + w + "\" w:type=\"dxa\"/><w:jc w:val=\"center\"/>"
+                + (doc.rtl ? "<w:bidiVisual/>" : "") + "<w:tblBorders><w:top " + bd + "/><w:left " + bd + "/><w:bottom " + bd + "/><w:right " + bd
+                + "/><w:insideH " + bd + "/><w:insideV " + bd + "/></w:tblBorders><w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"30\" w:type=\"dxa\"/>"
+                + "<w:left w:w=\"100\" w:type=\"dxa\"/><w:bottom w:w=\"30\" w:type=\"dxa\"/><w:right w:w=\"100\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr><w:tblGrid>");
+        for (let i = 0; i < cols; i++) t.append("<w:gridCol w:w=\"").append(colW).append("\"/>");
+        t.append("</w:tblGrid><w:tr>");
+        for (const h of doc.memberHeader) {
+            t.append("<w:tc><w:tcPr><w:tcW w:w=\"").append(colW).append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"")
+                    .append(light).append("\"/></w:tcPr><w:p><w:pPr><w:spacing w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>")
+                    .append(run(h, true, false, 22, null, TNR)).append("</w:p></w:tc>");
+        }
+        t.append("</w:tr>");
+        for (const r of doc.members) {
+            t.append("<w:tr>");
+            for (let i = 0; i < cols; i++) {
+                let v = i < r.length ? r.get(i) : "";
+                t.append("<w:tc><w:tcPr><w:tcW w:w=\"").append(colW).append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"FFFFFF\"/></w:tcPr>")
+                        .append("<w:p><w:pPr><w:spacing w:after=\"0\"/>").append(i == 0 ? "" : "<w:jc w:val=\"center\"/>").append("</w:pPr>")
+                        .append(run(v, false, false, 22, null, TNR)).append("</w:p></w:tc>");
+            }
+            t.append("</w:tr>");
+        }
+        return t.append("</w:tbl>").toString();
+    }
+
+    /** Deux cadres vides « Note finale » et « Observation » pour l'enseignant. */
+    function gradeBoxes() {
+        let gap = 600, box = Math.floor((textWidth - gap) / 2);
+        let bd = "w:val=\"single\" w:sz=\"8\" w:space=\"0\" w:color=\"000000\"";
+        let none = "<w:tcBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/></w:tcBorders>";
+        let boxed = "<w:tcBorders><w:top " + bd + "/><w:left " + bd + "/><w:bottom " + bd + "/><w:right " + bd + "/></w:tcBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"FFFFFF\"/>";
+        let t = new SB(noBorderTable([box, gap, box]));
+        t.append("<w:tr>")
+                .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(box).append("\" w:type=\"dxa\"/>").append(none).append("</w:tcPr><w:p><w:pPr><w:spacing w:after=\"60\"/></w:pPr>")
+                .append(run(doc.gradeLabel, false, false, 22, null, TNR)).append("</w:p></w:tc>")
+                .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(gap).append("\" w:type=\"dxa\"/>").append(none).append("</w:tcPr><w:p/></w:tc>")
+                .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(box).append("\" w:type=\"dxa\"/>").append(none).append("</w:tcPr><w:p><w:pPr><w:spacing w:after=\"60\"/><w:jc w:val=\"right\"/></w:pPr>")
+                .append(run(doc.observationLabel, false, false, 22, null, TNR)).append("</w:p></w:tc></w:tr>");
+        t.append("<w:tr><w:trPr><w:trHeight w:val=\"1600\" w:hRule=\"exact\"/></w:trPr>")
+                .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(box).append("\" w:type=\"dxa\"/>").append(boxed).append("</w:tcPr><w:p/></w:tc>")
+                .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(gap).append("\" w:type=\"dxa\"/>").append(none).append("</w:tcPr><w:p/></w:tc>")
+                .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(box).append("\" w:type=\"dxa\"/>").append(boxed).append("</w:tcPr><w:p/></w:tc></w:tr></w:tbl>");
+        return t.toString();
+    }
+
     /** Couverture simple sur fond illustré : établissement, cartouche du titre, auteurs, date. */
     function coverSimpleBg(b) {
         b.append(backgroundParagraph());
@@ -260,7 +329,7 @@ export function writeDocx(doc) {
             b.append("<w:p><w:pPr><w:spacing w:before=\"2400\" w:after=\"0\"/></w:pPr></w:p>");
             b.append(whiteCard(a.toString(), 0.6));
         }
-        b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
+        coverEnd(b);
     }
 
     /** Modèle « Exposé » : en-tête bilingue, deux logos, titre souligné, thème, participants, supervision, ruban. */
@@ -287,7 +356,11 @@ export function writeDocx(doc) {
         b.append(hasBg() ? cartouche(ti.toString(), 0.86) : ti.toString());
         let people = docLines(doc.author);
         let pc = new SB();
-        if (!people.isEmpty()) {
+        if (!doc.members.isEmpty() && !doc.memberHeader.isEmpty()) {
+            pc.append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"160\"/></w:pPr>")
+                    .append(runU(doc.participantsLabel, true, 22, TNR)).append("</w:p>")
+                    .append(membersTable(hasBg() ? 0.92 : 1.0)).append("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr></w:p>");
+        } else if (!people.isEmpty()) {
             pc.append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"160\"/></w:pPr>")
                     .append(runU(doc.participantsLabel, true, 22, TNR)).append("</w:p>");
             for (const person of people) {
@@ -314,64 +387,84 @@ export function writeDocx(doc) {
         }
         b.append("<w:p><w:pPr><w:spacing w:before=\"900\" w:after=\"0\"/></w:pPr></w:p>");
         yearRibbon(b, doc.date);
-        b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
+        coverEnd(b);
     }
 
-    /** Modèle « TP » : en-tête bilingue avec logo central, laboratoire, cadre coloré, groupe, informations, année. */
+    /** Modèle « TP » : en-tête bilingue + logo, ruban (matière, créneau, titre, date), membres, examinateur, cadres de note, année. */
     function coverTp(b) {
         b.append(backgroundParagraph());
         let side = ~~(textWidth * 0.38), mid = textWidth - 2 * side;
         b.append(noBorderTable([side, mid, side]));
         let logo = doc.logoLeft != null ? doc.logoLeft : doc.logoRight;
         b.append("<w:tr>").append(cell(side, headerColumn(doc.headerLeft, 17), "top"))
-                .append(cell(mid, logoParagraph(logo, 1250000, 1400000), "center"))
+                .append(cell(mid, logoParagraph(logo, 1250000, 1300000), "center"))
                 .append(cell(side, headerColumn(doc.headerRight, 17), "top")).append("</w:tr></w:tbl>");
-        b.append("<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"12\" w:space=\"1\" w:color=\"000000\"/></w:pBdr><w:spacing w:after=\"240\"/></w:pPr></w:p>");
         let lab = new SB();
         for (const l of docLines(doc.institution)) {
             lab.append("<w:p><w:pPr><w:spacing w:after=\"40\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(l.toUpperCase(), true, false, 22, null, TNR)).append("</w:p>");
         }
-        if (lab.length > 0) b.append(hasBg() ? whiteCard(lab.toString(), 0.9) : lab.toString());
-        b.append("<w:p><w:pPr><w:spacing w:before=\"500\" w:after=\"0\"/></w:pPr></w:p>");
-        // Cadre coloré du titre
-        let w = ~~(textWidth * 0.9);
+        if (lab.length > 0) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"160\" w:after=\"0\"/></w:pPr></w:p>");
+            b.append(hasBg() ? whiteCard(lab.toString(), 0.9) : lab.toString());
+        }
+        b.append("<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"0\"/></w:pPr></w:p>");
+        // Ruban du titre
+        let banner = docLines(doc.banner);
+        if (banner.isEmpty()) {
+            if (!doc.subtitle.isEmpty()) banner.add(doc.subtitle);
+            if (!doc.title.isEmpty()) banner.add(doc.title);
+        }
+        let fill = doc.theme.id.equals("modern") ? "1F5F7F" : accent;
+        let w = ~~(textWidth * 0.82);
+        let bd = "w:val=\"single\" w:sz=\"18\" w:space=\"0\" w:color=\"" + (doc.theme.id.equals("modern") ? "0E3B50" : light) + "\"";
         b.append("<w:tbl><w:tblPr><w:tblW w:w=\"").append(w).append("\" w:type=\"dxa\"/><w:jc w:val=\"center\"/><w:tblBorders>")
-                .append("<w:top w:val=\"single\" w:sz=\"12\" w:color=\"").append(accent).append("\"/><w:left w:val=\"single\" w:sz=\"12\" w:color=\"").append(accent).append("\"/>")
-                .append("<w:bottom w:val=\"single\" w:sz=\"12\" w:color=\"").append(accent).append("\"/><w:right w:val=\"single\" w:sz=\"12\" w:color=\"").append(accent).append("\"/>")
-                .append("</w:tblBorders><w:tblCellMar><w:top w:w=\"160\" w:type=\"dxa\"/><w:bottom w:w=\"160\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr>")
+                .append("<w:top ").append(bd).append("/><w:left ").append(bd).append("/><w:bottom ").append(bd).append("/><w:right ").append(bd).append("/>")
+                .append("</w:tblBorders><w:tblCellMar><w:top w:w=\"200\" w:type=\"dxa\"/><w:left w:w=\"200\" w:type=\"dxa\"/><w:bottom w:w=\"200\" w:type=\"dxa\"/><w:right w:w=\"200\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr>")
                 .append("<w:tblGrid><w:gridCol w:w=\"").append(w).append("\"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w=\"").append(w)
-                .append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(doc.theme.id.equals("modern") ? "4472C4" : light).append("\"/></w:tcPr>");
-        if (!doc.subtitle.isEmpty()) {
-            b.append("<w:p><w:pPr><w:spacing w:after=\"60\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(doc.subtitle.toUpperCase(), true, false, 28, doc.theme.id.equals("modern") ? "0B1F4D" : accent, TNR)).append("</w:p>");
+                .append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(fill).append("\"/></w:tcPr>");
+        for (let i = 0; i < banner.length; i++) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"60\" w:after=\"60\"/><w:jc w:val=\"center\"/></w:pPr>")
+                    .append(run(banner.get(i).toUpperCase(), true, false, 28, "FFFFFF", TNR, true)).append("</w:p>");
         }
-        b.append("<w:p><w:pPr><w:spacing w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(doc.title.toUpperCase(), true, false, 28, doc.theme.id.equals("modern") ? "0B1F4D" : accent, TNR)).append("</w:p>");
+        if (banner.isEmpty()) b.append("<w:p/>");
         b.append("</w:tc></w:tr></w:tbl>");
-        emptyLines(b, 1);
         if (!doc.group.isEmpty()) {
-            let g = "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>" + run(doc.group.toUpperCase(), true, false, 28, null, TNR) + "</w:p>";
-            b.append("<w:p><w:pPr><w:spacing w:before=\"400\" w:after=\"0\"/></w:pPr></w:p>");
+            let g = "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>" + run(doc.group.toUpperCase(), true, false, 24, null, TNR) + "</w:p>";
+            b.append("<w:p><w:pPr><w:spacing w:before=\"200\" w:after=\"0\"/></w:pPr></w:p>");
             b.append(hasBg() ? whiteCard(g, 0.6) : g);
-            b.append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"300\"/></w:pPr></w:p>");
         }
-        let info = new SB();
+        // Membres du groupe
+        let m = new SB();
+        if (!doc.members.isEmpty() && !doc.memberHeader.isEmpty()) {
+            m.append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"120\"/><w:jc w:val=\"center\"/></w:pPr>")
+                    .append(run(doc.membersLabel, true, false, 22, null, TNR)).append("</w:p>").append(membersTable(hasBg() ? 0.92 : 1.0))
+                    .append("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr></w:p>");
+        }
         for (const l of docLines(doc.infoLines)) {
-            info.append("<w:p><w:pPr><w:spacing w:after=\"200\"/><w:ind w:left=\"").append(hasBg() ? 200 : 851).append("\"/></w:pPr>").append(run(l.toUpperCase(), true, false, 22, null, TNR)).append("</w:p>");
+            m.append("<w:p><w:pPr><w:spacing w:after=\"100\"/></w:pPr>").append(run(l.toUpperCase(), true, false, 22, null, TNR)).append("</w:p>");
         }
-        if (info.length > 0) b.append(hasBg() ? whiteCard(info.toString(), 0.8) : info.toString());
+        if (!doc.supervision.isEmpty()) {
+            m.append("<w:p><w:pPr><w:spacing w:before=\"200\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>")
+                    .append(run(doc.supervisionLabel + " : ", false, false, 26, null, TNR))
+                    .append(run(docLines(doc.supervision).join(", "), true, false, 26, null, TNR)).append("</w:p>");
+        }
         for (const l of docLines(doc.extra)) {
-            b.append("<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"60\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(l, true, false, 22, null, TNR)).append("</w:p>");
+            m.append("<w:p><w:pPr><w:spacing w:before=\"120\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(l, true, false, 22, null, TNR)).append("</w:p>");
         }
-        emptyLines(b, 1);
+        if (m.length > 0) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"0\"/></w:pPr></w:p>");
+            b.append(hasBg() ? whiteCard(m.toString(), 0.95) : m.toString());
+        }
+        if (doc.gradeBoxes) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"0\"/></w:pPr></w:p>");
+            b.append(gradeBoxes());
+        }
         if (!doc.date.isEmpty()) {
-            if (hasBg()) {
-                b.append("<w:p><w:pPr><w:spacing w:before=\"700\" w:after=\"0\"/></w:pPr></w:p>");
-                yearRibbon(b, doc.date);
-            } else {
-                b.append("<w:p><w:pPr><w:spacing w:before=\"900\"/><w:jc w:val=\"center\"/></w:pPr>")
-                        .append(runU(doc.date, true, 24, TNR)).append("</w:p>");
-            }
+            b.append("<w:p><w:pPr><w:spacing w:before=\"").append(doc.gradeBoxes ? 240 : 900).append("\" w:after=\"0\"/>")
+                    .append(hasBg() ? "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"FFFFFF\"/>" : "").append("<w:jc w:val=\"right\"/></w:pPr>")
+                    .append(run(doc.yearLabel + " : " + doc.date, true, false, 24, null, TNR)).append("</w:p>");
         }
-        b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
+        coverEnd(b);
     }
 
     /** Page « Plan de travail ». */
@@ -406,7 +499,7 @@ export function writeDocx(doc) {
                         runs = "<w:r>" + rp + "<w:t xml:space=\"preserve\"> " + esc(label.substring(0, dot)) + " </w:t></w:r>"
                                 + run("  " + label.substring(dot + 2), false, false, 0, null, null);
                     }
-                    p(b, "<w:pPr><w:pStyle w:val=\"Heading" + lvl + "\"/>" + (blk.align != "LEFT" ? jc(blk.align) : "") + bidi() + "</w:pPr>", runs);
+                    p(b, "<w:pPr><w:pStyle w:val=\"Heading" + lvl + "\"/>" + (lvl == 1 && doc.breakBeforeH1 ? "<w:pageBreakBefore/>" : "") + (blk.align != "LEFT" ? jc(blk.align) : "") + bidi() + "</w:pPr>", runs);
                 }
                 break;
             }
@@ -532,10 +625,13 @@ export function writeDocx(doc) {
             b.append("<w:tr>");
             for (let i = 0; i < cols; i++) {
                 let t = i < r.length ? r.get(i) : "";
+                let head = blk.rowHeader && i == 0;
                 b.append("<w:tc><w:tcPr><w:tcW w:w=\"").append(colW).append("\" w:type=\"dxa\"/>");
-                if (ri % 2 == 1) b.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(light).append("\"/>");
+                if (head) b.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(accent).append("\"/>");
+                else if (ri % 2 == 1 && !blk.rowHeader) b.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(light).append("\"/>");
                 b.append("</w:tcPr>");
-                p(b, "<w:pPr><w:spacing w:after=\"0\"/>" + bidi() + "</w:pPr>", run(t, false, false, 0, null, null));
+                p(b, "<w:pPr><w:spacing w:after=\"0\"/>" + (blk.rowHeader && !head ? "<w:jc w:val=\"center\"/>" : "") + bidi() + "</w:pPr>",
+                        run(t, head, false, 0, head ? "FFFFFF" : null, null));
                 b.append("</w:tc>");
             }
             b.append("</w:tr>");
@@ -550,9 +646,9 @@ export function writeDocx(doc) {
 
     function image(b, blk) {
         let idx = addImage(blk.png, blk.imgType);
-        let maxW = textWidth * 635; // twips -> EMU
-        let cx = blk.pxW * 9525;
-        let cy = blk.pxH * 9525;
+        let maxW = ~~textWidth * 635; // twips -> EMU
+        let cx = ~~blk.pxW * 9525;
+        let cy = ~~blk.pxH * 9525;
         if (cx > maxW) {
             cy = Math.floor(cy * maxW / cx);
             cx = maxW;

@@ -56,8 +56,8 @@ export default {
   "faq_a3": "En PDF pour partager et imprimer, en Word (DOCX) pour modifier, et en PowerPoint (PPTX) pour les présentations.",
   "faq_q4": "Où sont enregistrés mes documents ?",
   "faq_a4": "Tes brouillons et documents restent sur ton téléphone. Tu peux les reprendre à tout moment, même hors ligne.",
-  "faq_q5": "Quelle différence entre Free et Premium ?",
-  "faq_a5": "La version gratuite permet de remplir tes champs toi-même et d'utiliser les modèles de base, avec une courte publicité avant chaque téléchargement. Premium ajoute l'aide de l'IA, des modèles avancés et supprime les publicités.",
+  "faq_q5": "FAFIO est-il payant ?",
+  "faq_a5": "Non. Pour l'instant, FAFIO est entièrement gratuit et sans publicité : tous les documents, thèmes et formats d'export sont disponibles.",
   "faq_q6": "Comment changer la langue ou le thème ?",
   "faq_a6": "Va dans Paramètres, puis touche Langue ou Thème.",
   "my_documents": "Mes documents",
@@ -114,7 +114,10 @@ export default {
   "font_title": "Police",
   "font_theme": "Celle du thème",
   "font_hint": "Toutes les polices s'affichent à l'identique dans le PDF, et sont intégrées au fichier Word.",
-  "example_prefix": "Ex. :"
+  "example_prefix": "Ex. :",
+  "columns_shown": "Colonnes du tableau (touche pour retirer ou remettre une colonne) :",
+  "slide_theme_title": "Design des diapositives",
+  "slide_theme_sub": "Chaque design applique son image à toute la présentation, diapositive de titre comprise."
  },
  "en": {
   "welcome_title": "Welcome to:",
@@ -170,8 +173,8 @@ export default {
   "faq_a3": "PDF to share and print, Word (DOCX) to edit, and PowerPoint (PPTX) for presentations.",
   "faq_q4": "Where are my documents saved?",
   "faq_a4": "Your drafts and documents stay on your phone. You can pick them up any time, even offline.",
-  "faq_q5": "What is the difference between Free and Premium?",
-  "faq_a5": "The free version lets you fill in your fields yourself and use the basic templates, with a short ad before each download. Premium adds AI assistance and advanced templates, and removes ads.",
+  "faq_q5": "Is FAFIO free?",
+  "faq_a5": "Yes. For now FAFIO is completely free, with no ads: every document, theme and export format is available.",
   "faq_q6": "How do I change the language or theme?",
   "faq_a6": "Go to Settings, then tap Language or Theme.",
   "my_documents": "My documents",
@@ -228,7 +231,10 @@ export default {
   "font_title": "Font",
   "font_theme": "Theme default",
   "font_hint": "Every font looks the same in the PDF and is embedded in the Word file.",
-  "example_prefix": "E.g."
+  "example_prefix": "E.g.",
+  "columns_shown": "Table columns (tap to remove or add back a column):",
+  "slide_theme_title": "Slide design",
+  "slide_theme_sub": "Each design applies its picture to the whole presentation, title slide included."
  },
  "ar": {
   "welcome_title": "مرحبًا بك في:",
@@ -284,8 +290,8 @@ export default {
   "faq_a3": "PDF للمشاركة والطباعة، وWord (DOCX) للتعديل، وPowerPoint (PPTX) للعروض التقديمية.",
   "faq_q4": "أين تُحفظ مستنداتي؟",
   "faq_a4": "تبقى مسوّداتك ومستنداتك على هاتفك، ويمكنك متابعتها في أي وقت، حتى بدون اتصال.",
-  "faq_q5": "ما الفرق بين النسخة المجانية وPremium؟",
-  "faq_a5": "تتيح لك النسخة المجانية ملء الحقول بنفسك واستخدام القوالب الأساسية، مع إعلان قصير قبل كل تنزيل. أما Premium فتضيف مساعدة الذكاء الاصطناعي وقوالب متقدمة وتزيل الإعلانات.",
+  "faq_q5": "هل FAFIO مدفوع؟",
+  "faq_a5": "لا. FAFIO مجاني تمامًا حاليًا ودون إعلانات: كل المستندات والقوالب وصيغ التصدير متاحة.",
   "faq_q6": "كيف أغيّر اللغة أو المظهر؟",
   "faq_a6": "اذهب إلى الإعدادات، ثم اضغط على اللغة أو المظهر.",
   "my_documents": "مستنداتي",
@@ -342,6 +348,9 @@ export default {
   "font_title": "الخط",
   "font_theme": "خط السمة",
   "font_hint": "تظهر كل الخطوط كما هي في PDF وتُدمج في ملف Word.",
-  "example_prefix": "مثال:"
+  "example_prefix": "مثال:",
+  "columns_shown": "أعمدة الجدول (المس لإزالة عمود أو إرجاعه):",
+  "slide_theme_title": "تصميم الشرائح",
+  "slide_theme_sub": "كل تصميم يطبّق صورته على العرض كله، بما فيه شريحة العنوان."
  }
 };

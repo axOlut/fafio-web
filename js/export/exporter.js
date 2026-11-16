@@ -146,7 +146,7 @@ function visual(item, color, images) {
     if ((item.kind || "0") === "1") {
         const points = parsePoints(item.data);
         if (!points.length) return null;
-        const type = { 1: "BAR", 2: "PIE" }[item.chart_type] || "LINE";
+        const type = { 1: "BAR", 2: "PIE", 3: "REG" }[item.chart_type] || "LINE";
         const img = renderChart({ type, title: "", xLabel: item.x_label || "", yLabel: item.y_label || "", points, accent: color });
         return img ? { bytes: img.png, w: img.width, h: img.height, type: "png" } : null;
     }

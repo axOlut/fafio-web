@@ -1,5 +1,6 @@
 // Graphiques (courbe, barres, secteurs) dessinés en PNG haute définition (copie de ChartPainter.kt).
 import { css } from "./canvasutil.js";
+import { regression, equation, fmtNum } from "../forms/science.js";
 
 const W = 1600, H = 1000;
 const PALETTE = [0x4F46E5, 0x0EA5E9, 0xF97316, 0x10B981, 0xA855F7, 0xEF4444, 0xEAB308, 0x14B8A6, 0xEC4899, 0x64748B];
@@ -57,7 +58,9 @@ function draw(c, spec) {
         font(c, 46, true);
         text(c, ellipsize(c, spec.title, W - 120), W / 2, 72, { color: ink, size: 46, bold: true, align: "center" });
     }
-    if (spec.type === "PIE") pie(c, spec, ink, muted); else axes(c, spec, ink, muted);
+    if (spec.type === "PIE") pie(c, spec, ink, muted);
+    else if (spec.type === "REG") scatter(c, spec, ink, muted);
+    else axes(c, spec, ink, muted);
 }
 
 function roundRect(c, x0, y0, x1, y1, r) {
@@ -157,4 +160,53 @@ function pie(c, spec, ink, muted) {
         text(c, `${fmt(p[1] / total * 100)} %`, W - 200, ly, { color: muted, size: 30, bold: true });
         ly += rowH;
     });
+}
+
+function scatter(c, spec, ink, muted) {
+    const pts = spec.points.map((p) => [Number(String(p[0]).replace(",", ".").trim()), p[1]]).filter((p) => String(p[0]) !== "" && !isNaN(p[0]));
+    if (!pts.length) return;
+    const comma = spec.points.some((p) => String(p[0]).includes(","));
+    const left = 170, right = W - 60, top = 120, bottom = H - 150;
+    const range = (vs) => {
+        let lo = Math.min(0, ...vs), hi = Math.max(0, ...vs);
+        if (hi === lo) hi = lo + 1;
+        const step = niceStep((hi - lo) / 6);
+        return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step, step];
+    };
+    const [xlo, xhi, xstep] = range(pts.map((p) => p[0]));
+    const [ylo, yhi, ystep] = range(pts.map((p) => p[1]));
+    const x = (v) => left + (v - xlo) / (xhi - xlo) * (right - left);
+    const y = (v) => bottom - (v - ylo) / (yhi - ylo) * (bottom - top);
+    c.strokeStyle = "#E5E7EB"; c.lineWidth = 2;
+    for (let v = ylo; v <= yhi + ystep / 2; v += ystep) { c.beginPath(); c.moveTo(left, y(v)); c.lineTo(right, y(v)); c.stroke(); text(c, fmt(v), left - 16, y(v) + 10, { color: muted, size: 28, align: "right" }); }
+    for (let v = xlo; v <= xhi + xstep / 2; v += xstep) { c.strokeStyle = "#E5E7EB"; c.beginPath(); c.moveTo(x(v), top); c.lineTo(x(v), bottom); c.stroke(); text(c, fmt(v), x(v), bottom + 40, { color: muted, size: 26, align: "center" }); }
+    c.strokeStyle = ink; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(x(0), top); c.lineTo(x(0), bottom); c.stroke();
+    c.beginPath(); c.moveTo(left, y(0)); c.lineTo(right, y(0)); c.stroke();
+    const reg = regression(pts);
+    if (reg) {
+        const [a, b, r2] = reg;
+        const x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
+        c.save(); c.beginPath(); c.rect(left, top, right - left, bottom - top); c.clip();
+        c.strokeStyle = "#DC2626"; c.lineWidth = 5; c.lineCap = "round";
+        c.beginPath(); c.moveTo(x(x0), y(a * x0 + b)); c.lineTo(x(x1), y(a * x1 + b)); c.stroke();
+        c.restore();
+        const eq = equation(a, b, comma) + "    R² = " + fmtNum(r2, comma);
+        font(c, 32, true);
+        const tw = c.measureText(eq).width;
+        roundRect(c, left + 24, top + 10, left + 24 + tw + 40, top + 66, 12);
+        c.fillStyle = "#fff"; c.fill(); c.strokeStyle = "#DC2626"; c.lineWidth = 2; c.stroke();
+        text(c, eq, left + 44, top + 48, { color: ink, size: 32, bold: true });
+    }
+    const accent = css(spec.accent);
+    for (const p of pts) {
+        c.fillStyle = accent; c.beginPath(); c.arc(x(p[0]), y(p[1]), 11, 0, 2 * Math.PI); c.fill();
+        c.fillStyle = "#fff"; c.beginPath(); c.arc(x(p[0]), y(p[1]), 4, 0, 2 * Math.PI); c.fill();
+    }
+    if (spec.xLabel.trim()) text(c, spec.xLabel, (left + right) / 2, H - 50, { color: ink, size: 30, bold: true, align: "center" });
+    if (spec.yLabel.trim()) {
+        c.save(); c.translate(50, (top + bottom) / 2); c.rotate(-Math.PI / 2);
+        text(c, spec.yLabel, 0, 10, { color: ink, size: 30, bold: true, align: "center" });
+        c.restore();
+    }
 }

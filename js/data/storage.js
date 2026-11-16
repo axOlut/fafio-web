@@ -56,7 +56,7 @@ export const Drafts = {
 /** Toutes les références d'images utilisées par un brouillon. */
 export function imageRefs(data) {
     const out = new Set();
-    const scan = (obj) => { for (const [k, v] of Object.entries(obj || {})) if (typeof v === "string" && v.startsWith("img_") && (k.endsWith("__img") || k === "image" || k.startsWith("cv_logo"))) out.add(v); };
+    const scan = (obj) => { for (const [k, v] of Object.entries(obj || {})) if (typeof v === "string" && v.startsWith("img_") && (k.endsWith("__img") || k === "image" || k === "photo" || k.startsWith("cv_logo"))) out.add(v); };
     scan(data.values);
     for (const items of Object.values(data.groups || {})) for (const it of items) scan(it);
     return out;
