@@ -1,5 +1,5 @@
 // Généré par tools/build_sw.py — garde FAFIO disponible hors ligne.
-const CACHE = "fafio-5d94ab9c82";
+const CACHE = "fafio-d012963ae9";
 const FILES = [
 "./",
 "assets/pptx/presProps.xml",
@@ -111,6 +111,8 @@ const FILES = [
 "img/icon-maskable-512.png",
 "img/logo_fafio.png",
 "img/logo_fafio_full.jpg",
+"img/shot-narrow.png",
+"img/shot-wide.png",
 "index.html",
 "js/app.js",
 "js/data/storage.js",

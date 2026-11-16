@@ -176,3 +176,55 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
 .dialog .actions .danger { color: var(--danger); }
 .install-tip { background: var(--primary-soft); color: var(--on-primary-soft); border-radius: 16px; padding: 14px 16px; font-size: 14px; }
 .install-tip b { font-weight: 700; }
+
+/* ---------- Bouton d'installation */
+.install-btn { margin-top: 2px; }
+.install-tip .install-btn { width: auto; height: 42px; font-size: 14px; }
+.side-install { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 12px; padding: 10px 12px; margin-bottom: 6px;
+    background: var(--primary); color: #fff; font-weight: 700; font-size: 14px; }
+.side-install svg { width: 20px; height: 20px; }
+
+/* ---------- Format ordinateur (grand écran) */
+.side { display: none; }
+@media (min-width: 1024px) {
+    .shell { display: grid; grid-template-columns: 272px 1fr; min-height: 100vh; }
+    .side { display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+        background: var(--surface); border-inline-end: 1px solid var(--line); padding: 18px 14px; gap: 2px; }
+    .side-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); padding: 4px 8px 18px; }
+    .side-brand img { width: 42px; height: 42px; border-radius: 12px; }
+    .side-brand .name { font-weight: 700; font-size: 20px; letter-spacing: 1px; }
+    .side-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 16px 10px 6px; }
+    .side-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; text-decoration: none; color: var(--ink); font-size: 14.5px; }
+    .side-item:hover { background: var(--bg); }
+    .side-item.on { background: var(--primary-soft); color: var(--on-primary-soft); font-weight: 700; }
+    .side-ic { display: grid; place-items: center; width: 24px; color: var(--muted); }
+    .side-item.on .side-ic { color: inherit; }
+    .side-ic svg { width: 22px; height: 22px; }
+    .side-grow { flex: 1; min-height: 16px; }
+    .main { min-width: 0; }
+    .main .screen { padding-top: 12px; }
+    .main .brandbar { display: none; }
+    .scroll, .topbar { max-width: 1120px; padding-left: 32px; padding-right: 32px; }
+    .topbar { padding-left: 24px; }
+    .grid { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .tile { height: 170px; padding: 20px; }
+    .tile:hover, .list-item:hover { box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+    .hero { padding: 28px 32px; }
+    .hero h2 { font-size: 28px; }
+    /* formulaires : champs courts sur deux colonnes */
+    .fields { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 14px; align-items: start; }
+    .fields > * { grid-column: 1 / -1; margin-top: 0 !important; }
+    .fields > .field.short { grid-column: auto; }
+    .card { padding: 22px 24px; }
+    .bottom-bar { box-shadow: 0 -1px 0 var(--line); padding: 12px 32px; display: flex; justify-content: flex-end; }
+    .bottom-bar .btn { margin: 0; width: auto; padding: 0 36px; }
+    .main .bottom-bar { max-width: none; }
+    /* aperçu : pages au centre, export à droite */
+    .preview-screen { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: auto 1fr; column-gap: 8px; }
+    .preview-screen .topbar { grid-column: 1 / -1; max-width: none; }
+    .preview-screen .scroll { max-width: 860px; }
+    .preview-screen .export { position: sticky; top: 16px; align-self: start; border-radius: 20px; margin: 8px 24px 24px 0; padding: 20px; }
+    .preview-screen .export .row { flex-direction: column; }
+    .themes { flex-wrap: wrap; overflow: visible; }
+    .toast { bottom: 32px; }
+}

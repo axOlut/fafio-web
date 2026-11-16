@@ -117,7 +117,11 @@ export default {
   "example_prefix": "Ex. :",
   "columns_shown": "Colonnes du tableau (touche pour retirer ou remettre une colonne) :",
   "slide_theme_title": "Design des diapositives",
-  "slide_theme_sub": "Chaque design applique son image à toute la présentation, diapositive de titre comprise."
+  "slide_theme_sub": "Chaque design applique son image à toute la présentation, diapositive de titre comprise.",
+  "side_home": "Accueil",
+  "install_app": "Installer FAFIO",
+  "installed_ok": "FAFIO est installé ! Tu le retrouves avec tes applications.",
+  "install_hint": "Installe FAFIO pour l'ouvrir comme une application et créer tes documents même sans Internet. Sur ordinateur (Chrome, Edge) : icône d'installation dans la barre d'adresse. Sur Android : menu ⋮ › Installer l'application. Sur iPhone : Partager › Sur l'écran d'accueil."
  },
  "en": {
   "welcome_title": "Welcome to:",
@@ -234,7 +238,11 @@ export default {
   "example_prefix": "E.g.",
   "columns_shown": "Table columns (tap to remove or add back a column):",
   "slide_theme_title": "Slide design",
-  "slide_theme_sub": "Each design applies its picture to the whole presentation, title slide included."
+  "slide_theme_sub": "Each design applies its picture to the whole presentation, title slide included.",
+  "side_home": "Home",
+  "install_app": "Install FAFIO",
+  "installed_ok": "FAFIO is installed! You will find it with your apps.",
+  "install_hint": "Install FAFIO to open it like an app and create documents even offline. On a computer (Chrome, Edge): install icon in the address bar. On Android: menu ⋮ › Install app. On iPhone: Share › Add to Home Screen."
  },
  "ar": {
   "welcome_title": "مرحبًا بك في:",
@@ -351,6 +359,10 @@ export default {
   "example_prefix": "مثال:",
   "columns_shown": "أعمدة الجدول (المس لإزالة عمود أو إرجاعه):",
   "slide_theme_title": "تصميم الشرائح",
-  "slide_theme_sub": "كل تصميم يطبّق صورته على العرض كله، بما فيه شريحة العنوان."
+  "slide_theme_sub": "كل تصميم يطبّق صورته على العرض كله، بما فيه شريحة العنوان.",
+  "side_home": "الرئيسية",
+  "install_app": "تثبيت FAFIO",
+  "installed_ok": "تم تثبيت FAFIO! ستجده مع تطبيقاتك.",
+  "install_hint": "ثبّت FAFIO لفتحه كتطبيق وإنشاء مستنداتك حتى دون إنترنت. على الحاسوب (كروم، إيدج): أيقونة التثبيت في شريط العنوان. على أندرويد: القائمة ⋮ › تثبيت التطبيق. على آيفون: مشاركة › إضافة إلى الشاشة الرئيسية."
  }
 };

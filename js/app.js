@@ -84,9 +84,54 @@ function confirmDialog(title, text, okLabel) {
 }
 
 const app = document.getElementById("app");
-function mount(node) {
-    app.replaceChildren(node);
+
+/** Menu fixe à gauche, visible seulement sur grand écran (ordinateur, tablette en paysage). */
+function sidebar() {
+    const cur = location.hash.replace(/^#\/?/, "") || "home";
+    const item = (path, ic, label, color) => h("a", { class: "side-item" + (cur === path || cur.startsWith(path + "/") ? " on" : ""), href: "#/" + path },
+        h("span", { class: "side-ic", style: color ? { color } : null }, icon(ic)), h("span", {}, label));
+    return h("nav", { class: "side", "aria-label": "FAFIO" },
+        h("a", { class: "side-brand", href: "#/home" }, h("img", { src: "img/logo_fafio.png", alt: "" }),
+            h("div", {}, h("div", { class: "name" }, "FAFIO"), h("div", { class: "small muted" }, s("tagline")))),
+        item("home", "report", s("side_home")),
+        item("documents", "folder", s("my_documents")),
+        h("div", { class: "side-label" }, s("what_to_create")),
+        MODULES.map((m) => item("module/" + m.id, m.icon, s("mod_" + MOD_STR[m.id]), ACCENT[m.id])),
+        h("div", { class: "side-grow" }),
+        installButton(true),
+        item("settings", "settings", s("settings")));
+}
+
+function mount(node, withSide = true) {
+    app.replaceChildren(withSide ? h("div", { class: "shell" }, sidebar(), h("main", { class: "main" }, node)) : node);
     window.scrollTo(0, 0);
+}
+
+// ---------------------------------------------------------------- Installation (Android, Windows, Mac, iPhone)
+
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    installEvt = e;
+    document.querySelectorAll(".install-slot").forEach((el) => el.replaceWith(installButton(el.dataset.side === "1")));
+});
+window.addEventListener("appinstalled", () => {
+    installEvt = null;
+    document.querySelectorAll(".install-btn, .install-tip").forEach((el) => el.remove());
+    toast(s("installed_ok"));
+});
+
+async function promptInstall() {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (e) { /* rien */ }
+    installEvt = null;
+}
+
+/** Bouton « Installer FAFIO » quand le navigateur le permet (Chrome, Edge sur Android et ordinateur). */
+function installButton(side = false) {
+    if (isStandalone() || !installEvt) return h("span", { class: "install-slot", "data-side": side ? "1" : "0" });
+    return h("button", { class: side ? "side-install install-btn" : "btn install-btn", onClick: promptInstall }, icon("download"), s("install_app"));
 }
 const go = (path) => { location.hash = "#/" + path; };
 
@@ -100,7 +145,7 @@ function welcome() {
             h("div", { class: "w-brand appear", style: { animationDelay: ".35s" } }, "FAFIO"),
             h("div", { class: "w-slogan appear", style: { animationDelay: ".6s" } }, s("welcome_slogan")),
             h("div", { class: "spacer" }),
-            h("button", { class: "btn big appear", style: { animationDelay: ".9s" }, onClick: () => { Settings.set("seen", "1"); go("home"); } }, s("welcome_start")))));
+            h("button", { class: "btn big appear", style: { animationDelay: ".9s" }, onClick: () => { Settings.set("seen", "1"); go("home"); } }, s("welcome_start")))), false);
 }
 
 function isStandalone() {
@@ -108,8 +153,24 @@ function isStandalone() {
 }
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
+const isMobile = () => /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
 function installTip() {
     if (isStandalone() || Settings.get("tipClosed", "") === "1") return null;
+    if (!isIos()) {
+        const pc = !isMobile();
+        const t = pc
+            ? { fr: ["Installer FAFIO sur ton ordinateur", "FAFIO s'ouvrira dans sa propre fenêtre et marchera même sans Internet. Dans Chrome ou Edge : clique sur l'icône d'installation à droite de la barre d'adresse (ou menu ⋮ › « Installer FAFIO »)."],
+                en: ["Install FAFIO on your computer", "FAFIO will open in its own window and work even offline. In Chrome or Edge: click the install icon at the right of the address bar (or menu ⋮ › “Install FAFIO”)."],
+                ar: ["ثبّت FAFIO على حاسوبك", "سيفتح FAFIO في نافذته الخاصة ويعمل دون إنترنت. في كروم أو إيدج: انقر على أيقونة التثبيت يمين شريط العنوان (أو القائمة ⋮ › « تثبيت FAFIO »)."] }[lang]
+            : { fr: ["Installer FAFIO sur ton téléphone", "FAFIO marchera comme une vraie application, même hors ligne. Menu du navigateur ⋮ › « Installer l'application » (ou « Ajouter à l'écran d'accueil »)."],
+                en: ["Install FAFIO on your phone", "FAFIO will work like a real app, even offline. Browser menu ⋮ › “Install app” (or “Add to Home screen”)."],
+                ar: ["ثبّت FAFIO على هاتفك", "سيعمل FAFIO كتطبيق حقيقي حتى دون اتصال. قائمة المتصفح ⋮ › « تثبيت التطبيق »."] }[lang];
+        const tip = h("div", { class: "install-tip row" },
+            h("div", { class: "grow" }, h("b", {}, t[0]), h("br"), t[1], h("div", { style: { marginTop: "10px" } }, installButton())),
+            h("button", { class: "icon-btn", "aria-label": s("close"), onClick: () => { Settings.set("tipClosed", "1"); tip.remove(); } }, icon("close")));
+        return tip;
+    }
     const txt = {
         fr: ["Installer FAFIO sur ton iPhone", "Dans Safari, touche le bouton Partager", "puis « Sur l'écran d'accueil ». FAFIO marchera alors comme une vraie application, même hors ligne."],
         en: ["Install FAFIO on your iPhone", "In Safari, tap the Share button", "then “Add to Home Screen”. FAFIO will then work like a real app, even offline."],
@@ -218,7 +279,8 @@ async function formScreen(id) {
         const exText = ex ? tr(ex) : "";
         const help = [];
         if (f.hint) help.push(tr(f.hint));
-        const wrap = h("div", { class: "field" });
+        const short = ["TEXT", "PHONE", "EMAIL", "NUMBER", "DATE"].includes(f.type);
+        const wrap = h("div", { class: "field" + (short ? " short" : "") });
         const helpEl = () => {
             if (!help.length && !exText) return null;
             return h("div", { class: "help" }, help.join("\n"), help.length && exText ? "\n" : "", exText ? [h("b", {}, s("example_prefix")), " " + exText.replace(/\n/g, " · ")] : "");
@@ -386,13 +448,13 @@ async function formScreen(id) {
                 h("div", { class: "grow" }, h("div", { class: "title-m" }, s("cover_page")), h("div", { class: "small muted" }, s("cover_sub"))),
                 h("label", { class: "switch" }, sw, h("span"))));
             if (data.cover && type.coverFields.length) {
-                const cf = h("div", { style: { marginTop: "12px" } });
+                const cf = h("div", { class: "fields", style: { marginTop: "12px" } });
                 for (const f of type.coverFields.filter((x) => isVisible(x, data.values))) cf.appendChild(fieldInput(f, data.values[f.id] || "", (v) => setValue(f.id, v), example(type.id, null, f.id), rerender));
                 style.appendChild(cf);
             }
         }
         nodes.push(style);
-        const fields = h("div", { class: "card" });
+        const fields = h("div", { class: "card fields" });
         for (const f of type.fields.filter((x) => isVisible(x, data.values))) {
             fields.appendChild(fieldInput(f, data.values[f.id] || "", (v) => setValue(f.id, v), example(type.id, null, f.id), rerender));
             if (allowsImage(type, f)) fields.appendChild(rubricImage(data.values, f.id, (k, v) => setValue(k, v)));
@@ -467,7 +529,7 @@ async function previewScreen(id) {
         } catch (e) { if (e && e.name !== "AbortError") { console.error(e); toast(s("export_error")); } }
         busy = false;
     }
-    mount(h("div", { class: "screen" }, topbar(s("preview"), () => go("form/" + id)),
+    mount(h("div", { class: "screen preview-screen" }, topbar(s("preview"), () => go("form/" + id)),
         h("div", { class: "scroll" }, pagesBox),
         h("div", { class: "export" }, h("div", { class: "inner" },
             h("div", { class: "title-m" }, s("download_as")), chips,
@@ -512,6 +574,8 @@ function settings() {
         h("div", { class: "card", style: { padding: "4px 16px" } },
             row("translate", s("language"), langs.find((x) => x[0] === curL)[1], () => choiceDialog(s("language"), langs, curL, (v) => { Settings.set("lang", v); applyPrefs(); settings(); })),
             row("palette", s("theme"), themes.find((x) => x[0] === curT)[1], () => choiceDialog(s("theme"), themes, curT, (v) => { Settings.set("theme", v); applyPrefs(); settings(); }))),
+        isStandalone() ? null : h("div", { class: "section-label" }, s("install_app")),
+        isStandalone() ? null : h("div", { class: "card" }, h("div", { class: "muted small", style: { marginBottom: "10px" } }, s("install_hint")), installButton()),
         h("div", { class: "section-label" }, s("section_help")),
         h("div", { class: "card", style: { padding: "4px 16px" } },
             row("help", s("faq"), s("faq_sub"), () => go("faq")),
@@ -562,6 +626,6 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 applyPrefs();
 route();
 
-if ("serviceWorker" in navigator && location.protocol === "https:") {
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
 }
