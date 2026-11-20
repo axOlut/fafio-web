@@ -7,6 +7,7 @@
 /** Génère un vrai fichier Word (.docx) modifiable, sans bibliothèque externe. */
 import { Zip, SB, esc, XML_HEAD } from "./util.js";
 import { Block, lines as docLines } from "./doc.js";
+import * as MathTex from "./math.js";
 
 /** Génère un vrai fichier Word (.docx) modifiable. Renvoie un Uint8Array. */
 export function writeDocx(doc) {
@@ -78,16 +79,19 @@ export function writeDocx(doc) {
                 .append("<w:document xmlns:w=\"").append(W).append("\" xmlns:r=\"").append(R).append("\" ")
                 .append("xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" ")
                 .append("xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" ")
-                .append("xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body>");
+                .append("xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\" xmlns:m=\"").append(MathTex.M_NS).append("\"><w:body>");
         if (doc.cover) {
             switch (doc.coverModel) {
                 case "EXPOSE": coverExpose(b); break;
                 case "TP": coverTp(b); break;
+                case "MEMOIRE": coverMemoire(b); break;
                 default: if (hasBg()) coverSimpleBg(b); else cover(b);
             }
         }
         labels = doc.headingLabels();
-        if (doc.toc) toc(b);
+        let tocBlock = false;
+        for (const x of doc.blocks) if (x.type == "TOC") tocBlock = true;
+        if (doc.toc && !tocBlock) toc(b);
         for (let i = 0; i < doc.blocks.length; i++) {
             current = i;
             block(b, doc.blocks.get(i));
@@ -102,9 +106,90 @@ export function writeDocx(doc) {
                 .append(doc.landscape ? " w:orient=\"landscape\"" : "").append("/>")
                 .append("<w:pgMar w:top=\"").append(m).append("\" w:right=\"").append(m).append("\" w:bottom=\"").append(m)
                 .append("\" w:left=\"").append(m).append("\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/>")
-                .append(doc.cover && !doc.pageBorder ? "<w:titlePg/>" : "")
+                .append(mainDone && doc.romanPrelim ? "<w:pgNumType w:start=\"1\"/>" : "")
+                .append(doc.cover && !doc.pageBorder && !(mainDone && doc.romanPrelim) ? "<w:titlePg/>" : "")
                 .append("</w:sectPr></w:body></w:document>");
         return b.toString();
+    }
+
+    /** Le corps du mémoire a commencé (fin des pages préliminaires). */
+    let mainDone = false;
+
+    /** Fin des pages préliminaires : section numérotée i, ii, iii… puis le corps repart à 1. */
+    function mainStart(b) {
+        mainDone = true;
+        if (!doc.romanPrelim) { if (!atPageStart(b)) b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>"); return; }
+        let pb = "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>";
+        if (endsWith(b, pb)) b.setLength(b.length - pb.length);
+        b.append("<w:p><w:pPr><w:sectPr>").append(doc.theme.runningHeader ? "<w:headerReference w:type=\"default\" r:id=\"rIdHeader\"/>" : "")
+                .append("<w:footerReference w:type=\"default\" r:id=\"rIdFooter\"/>").append(pageSize())
+                .append("<w:pgNumType w:fmt=\"lowerRoman\" w:start=\"1\"/>")
+                .append(doc.cover && !doc.pageBorder ? "<w:titlePg/>" : "").append("</w:sectPr></w:pPr></w:p>");
+    }
+
+    /** Modèle « mémoire » : en-tête bilingue + logo, diplôme, thème encadré, auteur, direction, jury, année. */
+    function coverMemoire(b) {
+        b.append(backgroundParagraph());
+        let side = ~~(textWidth * 0.38), mid = textWidth - 2 * side;
+        b.append(noBorderTable([side, mid, side]));
+        let logo = doc.logoLeft != null ? doc.logoLeft : doc.logoRight;
+        b.append("<w:tr>").append(cell(side, headerColumn(doc.headerLeft, 17), "top"))
+                .append(cell(mid, logoParagraph(logo, 1150000, 1150000), "center"))
+                .append(cell(side, headerColumn(doc.headerRight, 17), "top")).append("</w:tr></w:tbl>");
+        let c = new SB();
+        for (const l of docLines(doc.institution)) {
+            c.append("<w:p><w:pPr><w:spacing w:after=\"40\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(l.toUpperCase(), true, false, 22, null, TNR)).append("</w:p>");
+        }
+        let first = true;
+        for (const l of docLines(doc.extra)) {
+            c.append("<w:p><w:pPr><w:spacing w:before=\"").append(first ? 280 : 0).append("\" w:after=\"40\"/><w:jc w:val=\"center\"/></w:pPr>")
+                    .append(run(l, false, true, 24, null, TNR)).append("</w:p>");
+            first = false;
+        }
+        if (c.length > 0) b.append(hasBg() ? whiteCard(c.toString(), 0.94) : c.toString());
+        b.append("<w:p><w:pPr><w:spacing w:before=\"280\" w:after=\"0\"/></w:pPr></w:p>");
+        let ti = "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"120\"/><w:jc w:val=\"center\"/></w:pPr>" + runU(doc.themeLabel, true, 20, TNR) + "</w:p>"
+                + "<w:p><w:pPr><w:spacing w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>" + run(doc.title.toUpperCase(), true, false, 30, accent, headFont) + "</w:p>";
+        b.append(cartouche(ti, 0.9));
+        let pc = new SB();
+        let people = docLines(doc.author);
+        if (!people.isEmpty()) {
+            pc.append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"80\"/><w:jc w:val=\"center\"/></w:pPr>").append(runU(doc.participantsLabel, true, 22, TNR)).append("</w:p>");
+            for (let i = 0; i < people.length; i++) {
+                pc.append("<w:p><w:pPr><w:spacing w:after=\"20\"/><w:jc w:val=\"center\"/></w:pPr>")
+                        .append(run(i == 0 ? people.get(i).toUpperCase() : people.get(i), i == 0, false, i == 0 ? 26 : 22, null, TNR)).append("</w:p>");
+            }
+        }
+        let sups = docLines(doc.supervision);
+        if (!sups.isEmpty()) {
+            pc.append("<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"80\"/><w:jc w:val=\"center\"/></w:pPr>").append(runU(doc.supervisionLabel, true, 22, TNR)).append("</w:p>");
+            for (let i = 0; i < sups.length; i++) {
+                pc.append("<w:p><w:pPr><w:spacing w:after=\"20\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(sups.get(i), i == 0, false, 22, null, TNR)).append("</w:p>");
+            }
+        }
+        let jury = docLines(doc.infoLines);
+        if (!jury.isEmpty()) {
+            pc.append("<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"80\"/><w:jc w:val=\"center\"/></w:pPr>").append(runU(doc.membersLabel, true, 21, TNR)).append("</w:p>");
+            for (const j of jury) {
+                let k = j.indexOf(':');
+                let role = k > 0 ? j.substring(0, k).trim() + " :" : "";
+                let name = k > 0 ? j.substring(k + 1).trim() : j.trim();
+                pc.append("<w:p><w:pPr><w:tabs><w:tab w:val=\"left\" w:pos=\"3600\"/></w:tabs><w:spacing w:after=\"20\"/><w:ind w:left=\"1134\"/></w:pPr>")
+                        .append(run(role, true, false, 21, null, TNR)).append("<w:r><w:tab/></w:r>").append(run(name, false, false, 21, null, TNR)).append("</w:p>");
+            }
+        }
+        if (!doc.group.isEmpty()) {
+            pc.append("<w:p><w:pPr><w:spacing w:before=\"200\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>").append(run(doc.group, false, true, 21, null, TNR)).append("</w:p>");
+        }
+        if (pc.length > 0) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"360\" w:after=\"0\"/></w:pPr></w:p>");
+            b.append(hasBg() ? whiteCard(pc.toString(), 0.94) : pc.toString());
+        }
+        if (!doc.date.isEmpty()) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"480\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr>")
+                    .append(run(doc.yearLabel + " : " + doc.date, true, false, 24, null, TNR)).append("</w:p>");
+        }
+        coverEnd(b);
     }
 
     function cover(b) {
@@ -470,6 +555,9 @@ export function writeDocx(doc) {
     /** Page « Plan de travail ». */
     function toc(b) {
         b.append("<w:p><w:pPr><w:spacing w:after=\"360\"/>").append(bidi()).append("</w:pPr>").append(run(doc.tocTitle, true, false, 24, null, headFont)).append("</w:p>");
+        // Vrai sommaire Word : mis à jour avec les numéros de page à l'ouverture (la liste sert de résultat provisoire)
+        b.append("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr><w:r><w:fldChar w:fldCharType=\"begin\" w:dirty=\"true\"/></w:r>")
+                .append("<w:r><w:instrText xml:space=\"preserve\"> TOC \\o \"1-2\" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r></w:p>");
         for (let i = 0; i < doc.blocks.length; i++) {
             let blk = doc.blocks.get(i);
             if (blk.type != "HEADING" || blk.level < 1 || blk.level > 2) continue;
@@ -478,6 +566,7 @@ export function writeDocx(doc) {
             b.append("<w:p><w:pPr><w:spacing w:after=\"80\"/><w:ind w:left=\"").append(ind).append("\"/>").append(bidi()).append("</w:pPr>")
                     .append(run(label, false, false, 22, null, null)).append("</w:p>");
         }
+        b.append("<w:p><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p>");
         b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
     }
 
@@ -499,7 +588,14 @@ export function writeDocx(doc) {
                         runs = "<w:r>" + rp + "<w:t xml:space=\"preserve\"> " + esc(label.substring(0, dot)) + " </w:t></w:r>"
                                 + run("  " + label.substring(dot + 2), false, false, 0, null, null);
                     }
-                    p(b, "<w:pPr><w:pStyle w:val=\"Heading" + lvl + "\"/>" + (lvl == 1 && doc.breakBeforeH1 ? "<w:pageBreakBefore/>" : "") + (blk.align != "LEFT" ? jc(blk.align) : "") + bidi() + "</w:pPr>", runs);
+                    let brk = lvl == 1 && doc.breakBeforeH1;
+                    if (brk) {
+                        // pas de page blanche : le saut déjà présent (fin de couverture, sommaire) est remplacé par « saut avant le titre »
+                        let pb = "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>";
+                        if (endsWith(b, pb)) b.setLength(b.length - pb.length);
+                        else if (endsWith(b, "</w:sectPr></w:pPr></w:p>") || endsWith(b, "<w:body>")) brk = false;
+                    }
+                    p(b, "<w:pPr><w:pStyle w:val=\"Heading" + lvl + "\"/>" + (brk ? "<w:pageBreakBefore/>" : "") + (blk.align != "LEFT" ? jc(blk.align) : "") + bidi() + "</w:pPr>", runs);
                 }
                 break;
             }
@@ -564,7 +660,19 @@ export function writeDocx(doc) {
             case "PAGE_BREAK":
                 b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
                 break;
+            case "MATH":
+                math(b, blk);
+                break;
+            case "TOC":
+                if (!atPageStart(b)) b.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
+                toc(b);
+                break;
+            case "MAIN":
+                mainStart(b);
+                break;
             case "SLOT":
+            case "CHART":
+            case "LIST":
                 break;
             case "DIVIDER":
                 b.append("<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"").append(accent)
@@ -640,6 +748,26 @@ export function writeDocx(doc) {
         b.append("</w:tbl><w:p/>");
     }
 
+    /** Équation affichée : centrée ; numérotée « (n) » à droite dans un tableau sans bordure. */
+    function math(b, blk) {
+        let eq = MathTex.toOmml(blk.text, true);
+        if (blk.num.isEmpty()) {
+            b.append("<w:p><w:pPr><w:spacing w:before=\"120\" w:after=\"120\"/><w:jc w:val=\"center\"/></w:pPr>").append(eq).append("</w:p>");
+            return;
+        }
+        let side = Math.floor(textWidth / 8), mid = textWidth - 2 * side;
+        let none = "<w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/>";
+        b.append("<w:tbl><w:tblPr><w:tblW w:w=\"").append(textWidth).append("\" w:type=\"dxa\"/>").append(doc.rtl ? "<w:bidiVisual/>" : "")
+                .append("<w:tblBorders>").append(none).append("</w:tblBorders><w:tblLayout w:type=\"fixed\"/></w:tblPr><w:tblGrid>")
+                .append("<w:gridCol w:w=\"").append(side).append("\"/><w:gridCol w:w=\"").append(mid).append("\"/><w:gridCol w:w=\"").append(side).append("\"/></w:tblGrid><w:tr>");
+        let cell = "<w:tc><w:tcPr><w:tcW w:w=\"%W%\" w:type=\"dxa\"/><w:vAlign w:val=\"center\"/></w:tcPr>";
+        b.append(cell.replaceAll("%W%", String(side))).append("<w:p/></w:tc>");
+        b.append(cell.replaceAll("%W%", String(mid))).append("<w:p><w:pPr><w:spacing w:before=\"120\" w:after=\"120\"/><w:jc w:val=\"center\"/></w:pPr>").append(eq).append("</w:p></w:tc>");
+        b.append(cell.replaceAll("%W%", String(side))).append("<w:p><w:pPr><w:jc w:val=\"").append(doc.rtl ? "left" : "right").append("\"/></w:pPr>")
+                .append(runPlain(blk.num, false, false, 0, null, null, false)).append("</w:p></w:tc>");
+        b.append("</w:tr></w:tbl>");
+    }
+
     function border(side) {
         return "<w:" + side + " w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"D1D5DB\"/>";
     }
@@ -695,6 +823,15 @@ export function writeDocx(doc) {
         return out;
     }
 
+    /** Le texte en cours commence-t-il une nouvelle page (début, saut de page, nouvelle section) ? */
+    function atPageStart(b) {
+        return endsWith(b, "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>") || endsWith(b, "</w:sectPr></w:pPr></w:p>") || endsWith(b, "<w:body>");
+    }
+
+    function endsWith(b, end) {
+        return b.length >= end.length && b.substring(b.length - end.length).equals(end);
+    }
+
     function p(b, pPr, runs) {
         b.append("<w:p>").append(pPr == null ? "" : pPr).append(runs).append("</w:p>");
     }
@@ -725,6 +862,21 @@ export function writeDocx(doc) {
     }
 
     function run(text, bold, italic, halfPts, color, font, underline = false) {
+        let spans = MathTex.inlineSpans(text);
+        if (spans.isEmpty()) return runPlain(text, bold, italic, halfPts, color, font, underline);
+        // Formules « $…$ » dans la phrase : équations Word natives
+        let r = new SB();
+        let last = 0;
+        for (const sp of spans) {
+            if (sp[0] > last) r.append(runPlain(text.substring(last, sp[0]), bold, italic, halfPts, color, font, underline));
+            r.append(MathTex.toOmml(text.substring(sp[2], sp[3]), false));
+            last = sp[1];
+        }
+        if (last < text.length) r.append(runPlain(text.substring(last), bold, italic, halfPts, color, font, underline));
+        return r.toString();
+    }
+
+    function runPlain(text, bold, italic, halfPts, color, font, underline) {
         let r = new SB("<w:r><w:rPr>");
         if (font != null) {
             r.append("<w:rFonts w:ascii=\"").append(font).append("\" w:hAnsi=\"").append(font).append("\" w:cs=\"").append(font).append("\"/>");
@@ -832,7 +984,7 @@ export function writeDocx(doc) {
     }
 
     function header() {
-        return XML_HEAD + "<w:hdr xmlns:w=\"" + W + "\" xmlns:r=\"" + R + "\"><w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"4\" w:color=\"" + accent + "\"/></w:pBdr>"
+        return XML_HEAD + "<w:hdr xmlns:w=\"" + W + "\" xmlns:r=\"" + R + "\" xmlns:m=\"" + MathTex.M_NS + "\"><w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"4\" w:color=\"" + accent + "\"/></w:pBdr>"
                 + "<w:jc w:val=\"" + (doc.rtl ? "left" : "right") + "\"/></w:pPr>" + run(doc.title, false, true, 16, "7F7F7F", null) + "</w:p></w:hdr>";
     }
 

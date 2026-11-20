@@ -1,0 +1,8 @@
+# Configuration du serveur FAFIO (si tu utilises la ligne de commande « wrangler » ; sinon, tout se fait dans le tableau de bord Cloudflare).
+name = "fafio-api"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+[[kv_namespaces]]
+binding = "FAFIO"
+id = "À_REMPLACER_PAR_L_ID_DE_TON_ESPACE_KV"

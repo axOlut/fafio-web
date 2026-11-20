@@ -1,7 +1,7 @@
 import re, subprocess, sys
 J='/home/claude/fafio-android/app/src/main/java/com/axolut/fafio/doc/DocxWriter.java'
 s=subprocess.run(['python3','tools/j2js.py',J],capture_output=True,text=True,check=True).stdout
-s=s.replace('class DocxWriter {','import { Zip, SB, esc, XML_HEAD } from "./util.js";\nimport { Block, lines as docLines } from "./doc.js";\n\n/** Génère un vrai fichier Word (.docx) modifiable. Renvoie un Uint8Array. */\nexport function writeDocx(doc) {',1)
+s=s.replace('class DocxWriter {','import { Zip, SB, esc, XML_HEAD } from "./util.js";\nimport { Block, lines as docLines } from "./doc.js";\nimport * as MathTex from "./math.js";\n\n/** Génère un vrai fichier Word (.docx) modifiable. Renvoie un Uint8Array. */\nexport function writeDocx(doc) {',1)
 s=re.sub(r'    DocxWriter\(Doc doc\) \{\n(.*?)\n    \}\n', lambda m: m.group(1).replace('this.','')+'\n', s, flags=re.S)
 s=re.sub(r'    function write\(doc, out\) \{\n.*?\n    \}\n','',s,flags=re.S)
 s=s.replace('let doc ;\n','').replace('doc = doc;\n','')
@@ -54,7 +54,8 @@ for a,b in [('cy = maxCx * img.h / Math.max(1, img.w);','cy = Math.floor(maxCx *
  ('cy = cy * maxW / cx;','cy = Math.floor(cy * maxW / cx);'),
  ('cx = cx * maxH / cy;','cx = Math.floor(cx * maxH / cy);'),
  ('colW = w / cols;','colW = Math.floor(w / cols);'),
- ('let gap = 600, box = (textWidth - gap) / 2;','let gap = 600, box = Math.floor((textWidth - gap) / 2);')]:
+ ('let gap = 600, box = (textWidth - gap) / 2;','let gap = 600, box = Math.floor((textWidth - gap) / 2);'),
+ ('let side = textWidth / 8, mid','let side = Math.floor(textWidth / 8), mid')]:
     assert a in s, a; s=s.replace(a,b)
 s=s.rstrip(); assert s.endswith('}')
 s=s[:-1]+'    return writeTo();\n}\n'

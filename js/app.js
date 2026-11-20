@@ -2,7 +2,9 @@
 import "./util.js";
 import { icon } from "./ui/icons.js";
 import STR from "./i18n.js";
-import { TYPES, MODULES, typeById, forModule, allowsImage } from "./forms/catalog.js";
+import { TYPES, MODULES, typeById, forModule, allowsImage, CHART_TYPES } from "./forms/catalog.js";
+import { richTools } from "./ui/rich.js";
+import * as Pro from "./data/pro.js";
 import { blank, isVisible, imgKey, capKey, Form } from "./forms/model.js";
 import { example } from "./forms/examples.js";
 import { THEMES, FONTS, themeOf } from "./forms/themes.js";
@@ -274,7 +276,7 @@ async function formScreen(id) {
     }
 
     // --- champs
-    function fieldInput(f, value, onChange, ex, onStructure) {
+    function fieldInput(f, value, onChange, ex, onStructure, gid = null) {
         const label = tr(f.label) + (f.required ? " *" : "");
         const exText = ex ? tr(ex) : "";
         const help = [];
@@ -321,6 +323,13 @@ async function formScreen(id) {
                 wrap.append(h("label", {}, label), el);
                 const he = helpEl();
                 if (he) wrap.append(he);
+                if (multi && gid !== "figures" && !f.id.startsWith("cv_")) {
+                    wrap.classList.add("wide-field");
+                    wrap.append(richTools(el, {
+                        rich: allowsImage(type, f), values: data.values, setValue: (k, v) => { data.values[k] = v; changed(); },
+                        s, tr, chartTypes: CHART_TYPES, Images, toast, lang, pro: Pro,
+                    }));
+                }
                 return wrap;
             }
         }
@@ -428,7 +437,7 @@ async function formScreen(id) {
                     index < items.length - 1 ? h("button", { class: "icon-btn", "aria-label": s("move_down"), onClick: () => { items.splice(index + 1, 0, items.splice(index, 1)[0]); changed(); rerender(); } }, icon("down")) : null,
                     h("button", { class: "icon-btn", "aria-label": s("remove"), onClick: () => { items.splice(index, 1); changed(); rerender(); } }, icon("close"))));
             for (const f of g.fields.filter((x) => isVisible(x, item))) {
-                card.appendChild(fieldInput(f, item[f.id] || "", (v) => { item[f.id] = v; changed(); }, example(type.id, g.id, f.id), rerender));
+                card.appendChild(fieldInput(f, item[f.id] || "", (v) => { item[f.id] = v; changed(); }, example(type.id, g.id, f.id), rerender, g.id));
                 if (g.id !== "figures" && allowsImage(type, f)) card.appendChild(rubricImage(item, f.id, (k, v) => { item[k] = v; changed(); }));
             }
             out.appendChild(card);
@@ -500,15 +509,21 @@ async function previewScreen(id) {
     let format = type.formats[0];
     const chips = h("div", { class: "chips", style: { margin: "6px 0 12px" } });
     const label = { PDF: s("format_pdf"), DOCX: s("format_docx"), PPTX: s("format_pptx"), PNG: s("format_png") };
-    const drawChips = () => chips.replaceChildren(...type.formats.map((f) => h("button", { class: "chip" + (f === format ? " on" : ""), onClick: () => { format = f; drawChips(); } }, label[f])));
+    const locked = (f) => Pro.isPro(type, f) && !Pro.isUnlocked(id);
+    const drawChips = () => chips.replaceChildren(...type.formats.map((f) => h("button", { class: "chip" + (f === format ? " on" : ""), onClick: () => { format = f; drawChips(); } },
+        label[f] + (locked(f) ? " · " + s("pro_badge") : ""))));
     drawChips();
     let busy = false;
+    /** Document Pro : utiliser un crédit (ou en acheter). Renvoie true si l'export peut continuer. */
+    const gate = () => (!locked(format) ? Promise.resolve(true) : proDialog(id).then((ok) => { drawChips(); return ok; }));
     async function make() {
         const blob = await exportFile(type, draft.data, lang, format);
         return { blob, name: fileName(type, draft.data, lang, format) };
     }
     async function save() {
-        if (busy) return; busy = true;
+        if (busy) return;
+        if (!(await gate())) return;
+        busy = true;
         try {
             const { blob, name } = await make();
             const url = URL.createObjectURL(blob);
@@ -520,7 +535,9 @@ async function previewScreen(id) {
         busy = false;
     }
     async function share() {
-        if (busy) return; busy = true;
+        if (busy) return;
+        if (!(await gate())) return;
+        busy = true;
         try {
             const { blob, name } = await make();
             const file = new File([blob], name, { type: MIME[format] });
@@ -545,6 +562,57 @@ async function previewScreen(id) {
         console.error(e);
         pagesBox.replaceChildren(h("div", { class: "muted" }, s("export_error")));
     }
+}
+
+// ---------------------------------------------------------------- Gratuit / Pro
+
+function packButtons(onDone) {
+    if (!Pro.online()) return [h("div", { class: "small muted" }, s("pro_buy_soon"))];
+    return Pro.PACKS.map((p) => h("button", { class: "btn ghost", style: { width: "100%" }, onClick: async () => {
+        try { await Pro.buy(p.id); } catch (e) { toast(s("pro_code_error", e.message)); }
+        if (onDone) onDone();
+    } }, s("pro_pack", String(p.credits), String(p.price))));
+}
+
+function proDialog(draftId) {
+    return new Promise((resolve) => {
+        const back = h("div", { class: "dialog-back" });
+        const close = (v) => { back.remove(); resolve(v); };
+        const body = h("div", { class: "stack-s" });
+        const draw = () => {
+            const n = Pro.credits();
+            body.replaceChildren(...[
+                h("div", { class: "muted" }, s("pro_explain")),
+                h("div", { class: "title-m", style: { color: "var(--primary)" } }, s("pro_credits", n)),
+                n > 0 ? h("button", { class: "btn", style: { width: "100%" }, onClick: () => { if (Pro.unlock(draftId)) { toast(s("pro_unlocked", Pro.UNLOCK_DAYS)); close(true); } } }, s("pro_use_credit")) : null,
+                h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_buy_title")),
+                ...packButtons(),
+                Pro.TEST_MODE ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: () => { Pro.addCredits(3); draw(); } }, s("pro_test_add")) : null].filter(Boolean));
+        };
+        draw();
+        back.appendChild(h("div", { class: "dialog wide", role: "dialog" }, h("h3", {}, s("pro_title")), body,
+            h("div", { class: "actions" }, h("button", { onClick: () => close(false) }, s("cancel")))));
+        back.addEventListener("click", (e) => { if (e.target === back) close(false); });
+        document.body.appendChild(back);
+    });
+}
+
+function proCard() {
+    const count = h("div", { class: "title-m" }, s("pro_credits", Pro.credits()));
+    const code = h("input", { class: "input", placeholder: s("pro_code_label"), autocapitalize: "characters", spellcheck: "false" });
+    const refresh = () => { count.textContent = s("pro_credits", Pro.credits()); };
+    const redeemBtn = h("button", { class: "btn", style: { width: "100%" }, onClick: async () => {
+        if (!code.value.trim()) return;
+        if (!Pro.online()) { toast(s("pro_offline")); return; }
+        try { const n = await Pro.redeem(code.value); code.value = ""; refresh(); toast(s("pro_code_ok", n)); }
+        catch (e) { toast(s("pro_code_error", e.message)); }
+    } }, s("pro_code_btn"));
+    return h("div", { class: "card stack-s" }, count,
+        h("div", { class: "small muted" }, s("pro_device_id", Pro.deviceId())),
+        h("div", { class: "small muted" }, s("pro_web_note")),
+        code, redeemBtn,
+        h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_buy_title")), ...packButtons(),
+        Pro.TEST_MODE ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: () => { Pro.addCredits(3); refresh(); } }, s("pro_test_add")) : null);
 }
 
 // ---------------------------------------------------------------- Réglages, FAQ, À propos
@@ -574,6 +642,8 @@ function settings() {
         h("div", { class: "card", style: { padding: "4px 16px" } },
             row("translate", s("language"), langs.find((x) => x[0] === curL)[1], () => choiceDialog(s("language"), langs, curL, (v) => { Settings.set("lang", v); applyPrefs(); settings(); })),
             row("palette", s("theme"), themes.find((x) => x[0] === curT)[1], () => choiceDialog(s("theme"), themes, curT, (v) => { Settings.set("theme", v); applyPrefs(); settings(); }))),
+        h("div", { class: "section-label" }, s("pro_section")),
+        proCard(),
         isStandalone() ? null : h("div", { class: "section-label" }, s("install_app")),
         isStandalone() ? null : h("div", { class: "card" }, h("div", { class: "muted small", style: { marginBottom: "10px" } }, s("install_hint")), installButton()),
         h("div", { class: "section-label" }, s("section_help")),
@@ -625,6 +695,12 @@ window.addEventListener("hashchange", route);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && leaveHook) leaveHook(); });
 applyPrefs();
 route();
+// Retour d'un paiement Mobile Money : on récupère le code et on ajoute les crédits
+Pro.checkPending().then((r) => {
+    if (!r) return;
+    if (r.failed) toast(s("pro_pay_fail"));
+    else { toast(s("pro_pay_ok", String(r.credits), r.code), 12000); if ((location.hash || "").includes("settings")) settings(); }
+});
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     navigator.serviceWorker.register("sw.js").catch(() => {});

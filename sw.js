@@ -1,5 +1,5 @@
 // Généré par tools/build_sw.py — garde FAFIO disponible hors ligne.
-const CACHE = "fafio-d012963ae9";
+const CACHE = "fafio-0233d25a64";
 const FILES = [
 "./",
 "assets/pptx/presProps.xml",
@@ -115,6 +115,7 @@ const FILES = [
 "img/shot-wide.png",
 "index.html",
 "js/app.js",
+"js/data/pro.js",
 "js/data/storage.js",
 "js/doc.js",
 "js/docx.js",
@@ -122,6 +123,7 @@ const FILES = [
 "js/export/chart.js",
 "js/export/exporter.js",
 "js/export/fonts.js",
+"js/export/mathdraw.js",
 "js/export/pdf.js",
 "js/forms/catalog.js",
 "js/forms/examples.js",
@@ -129,8 +131,11 @@ const FILES = [
 "js/forms/science.js",
 "js/forms/themes.js",
 "js/i18n.js",
+"js/math.js",
 "js/pptx.js",
+"js/rich.js",
 "js/ui/icons.js",
+"js/ui/rich.js",
 "js/util.js",
 "manifest.webmanifest"
 ];

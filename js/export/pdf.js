@@ -1,8 +1,10 @@
 // Rendu des pages (documents A4, présentations 16:9) sur des canevas, puis assemblage en PDF.
 // Copie fidèle de PdfExporter.kt (mêmes positions, en points).
-import { lines as docLines } from "../doc.js";
+import { lines as docLines, romanLower } from "../doc.js";
 import { css, family, SERIF, SANS, paint, measure, drawText, ellipsize, layout, preloadImages, imageOf, roundRect } from "./canvasutil.js";
 import { font as fontSpec } from "../forms/themes.js";
+import { linearize } from "../rich.js";
+import { mathBox, drawMath } from "./mathdraw.js";
 
 const WHITE = 0xFFFFFF;
 
@@ -38,29 +40,31 @@ class Pages {
  * scale = pixels par point (2 pour l'aperçu, 2.5 pour le PDF).
  */
 export async function renderDoc(doc, scale = 2) {
+    linearize(doc, true);
     await preloadImages(doc);
     if (doc.blocks.length === 0 && doc.slides.length > 0) {
         const pages = new Pages(960, 540, scale, false);
         new SlidePainter(doc, pages).paint();
         return { pages: pages.list, w: 960, h: 540 };
     }
-    let total = 0, known = new Map();
-    if (doc.toc || doc.theme.pageNum === "OF") {
+    let total = 0, known = new Map(), main = 0;
+    if (doc.toc || doc.romanPrelim || doc.theme.pageNum === "OF") {
         const dry = new Pages(doc.landscape ? 842 : 595, doc.landscape ? 595 : 842, 1, true);
-        const p = new PagePainter(doc, dry, 0, new Map());
+        const p = new PagePainter(doc, dry, 0, new Map(), 0);
         p.paint();
-        total = p.pageNo; known = p.headingPages;
+        total = p.pageNo; known = p.headingPages; main = p.mainStart;
     }
     const pages = new Pages(doc.landscape ? 842 : 595, doc.landscape ? 595 : 842, scale, false);
-    new PagePainter(doc, pages, total, known).paint();
+    new PagePainter(doc, pages, total, known, main).paint();
     return { pages: pages.list, w: pages.w, h: pages.h };
 }
 
 // ================================================================== Documents A4
 
 class PagePainter {
-    constructor(doc, pages, totalPages, knownPages) {
+    constructor(doc, pages, totalPages, knownPages, knownMain = 0) {
         this.doc = doc; this.pages = pages; this.totalPages = totalPages; this.knownPages = knownPages;
+        this.knownMain = knownMain; this.mainStart = 0;
         this.headingPages = new Map();
         const th = doc.theme;
         this.theme = th; this.lightColor = th.light; this.accent2 = th.accent; this.hasBg = th.coverBg != null;
@@ -80,11 +84,12 @@ class PagePainter {
         if (d.cover) {
             if (d.coverModel === "EXPOSE") this.coverExpose();
             else if (d.coverModel === "TP") this.coverTp();
+            else if (d.coverModel === "MEMOIRE") this.coverMemoire();
             else this.cover();
             if (d.pageBorder) this.pageBorder();
         }
         this.labels = d.headingLabels();
-        if (d.toc) this.tocPage();
+        if (d.toc && !d.blocks.some((b) => b.type === "TOC")) this.tocPage();
         this.newPage(true);
         d.blocks.forEach((b, i) => { this.current = i; this.block(b); });
         this.finish();
@@ -161,10 +166,19 @@ class PagePainter {
     }
 
     // -------------------------------------------------------- Pagination
+    /** Numéro affiché : chiffres romains pour les pages préliminaires d'un mémoire, puis 1, 2, 3… */
+    pageLabel(n, main) {
+        const d = this.doc;
+        if (!d.romanPrelim) return String(n);
+        if (main > 0 && n >= main) return String(n - main + 1);
+        return romanLower(n - (d.cover && d.pageBorder ? 1 : 0));
+    }
+
     drawFooter() {
         const { c, theme, left, contentW, pw, ph, margin } = this;
         const yy = ph - margin / 2;
-        const n = String(this.pageNo);
+        const n = this.pageLabel(this.pageNo, this.mainStart);
+        const total = !this.doc.romanPrelim ? this.totalPages : (this.mainStart > 0 && this.knownMain > 0 && this.totalPages > 0 ? this.totalPages - this.knownMain + 1 : 0);
         switch (theme.pageNum) {
             case "PIPE": {
                 this.line(left, yy - 12, left + contentW, yy - 12, 0xD9D9D9, 0.6);
@@ -175,7 +189,7 @@ class PagePainter {
                 break;
             }
             case "OF": {
-                const txt = this.totalPages > 0 ? `${theme.pageWord} ${n} ${theme.ofWord} ${this.totalPages}` : `${theme.pageWord} ${n}`;
+                const txt = total > 0 ? `${theme.pageWord} ${n} ${theme.ofWord} ${total}` : `${theme.pageWord} ${n}`;
                 const p = this.tp(8.5, false, false, 0x6B7280); p.align = "right";
                 drawText(c, txt, left + contentW, yy, p);
                 break;
@@ -506,8 +520,68 @@ class PagePainter {
         }
     }
 
-    tocPage() {
-        this.newPage(true);
+    /** Modèle « mémoire » : en-tête bilingue + logo, diplôme, thème encadré, auteur, direction, jury, année. */
+    coverMemoire() {
+        this.newPage(false);
+        this.drawCoverBg();
+        const { doc, ph, left, contentW, hasBg, ink, accent } = this;
+        if (hasBg) this.card(left - 14, 28, contentW + 28, ph - 56);
+        const side = contentW * 0.38, mid = contentW - 2 * side;
+        let yy = 40;
+        const hl = this.headerColumn(doc.headerLeft, left, side, yy, 7);
+        const hr = this.headerColumn(doc.headerRight, left + side + mid, side, yy, 7);
+        const lg = this.drawLogo(doc.logoLeft || doc.logoRight, left + side + mid / 2, yy + 4, mid - 10, 80);
+        yy += Math.max(hl, hr, lg + 4) + 12;
+        for (const l of docLines(doc.institution)) yy += this.centered(l.toUpperCase(), this.plain(10.5, true), yy) + 2;
+        yy += 18;
+        for (const l of docLines(doc.extra)) yy += this.centered(l, this.tp(11.5, false, true, ink), yy, contentW * 0.9) + 3;
+        yy += 16;
+        const boxW = contentW * 0.9, boxX = left + (contentW - boxW) / 2;
+        const lab = this.layout(doc.themeLabel, this.plain(10, true, accent, null, true), boxW - 36, "CENTER");
+        const tl = this.layout(doc.title.toUpperCase(), this.plain(15, true, accent, this.fonts.head), boxW - 36, "CENTER");
+        const boxH = lab.height + tl.height + 38;
+        this.rrect(boxX, yy, boxX + boxW, yy + boxH, 6, this.lightColor);
+        this.rrectStroke(boxX, yy, boxX + boxW, yy + boxH, 6, accent, 2.2);
+        this.rrectStroke(boxX + 4, yy + 4, boxX + boxW - 4, yy + boxH - 4, 4, accent, 0.7);
+        this.drawAt(lab, boxX + 18, yy + 14);
+        this.drawAt(tl, boxX + 18, yy + 24 + lab.height);
+        yy += boxH + 26;
+        const people = docLines(doc.author);
+        if (people.length) {
+            yy += this.centered(doc.participantsLabel, this.plain(11, true, ink, null, true), yy) + 6;
+            people.forEach((p, i) => { yy += this.centered(i === 0 ? p.toUpperCase() : p, this.plain(i === 0 ? 13 : 11, i === 0), yy) + 2; });
+            yy += 18;
+        }
+        const sups = docLines(doc.supervision);
+        if (sups.length) {
+            yy += this.centered(doc.supervisionLabel, this.plain(11, true, ink, null, true), yy) + 6;
+            for (const sl of sups) yy += this.centered(sl, this.plain(11, sl === sups[0]), yy) + 2;
+            yy += 16;
+        }
+        const jury = docLines(doc.infoLines);
+        if (jury.length) {
+            yy += this.centered(doc.membersLabel, this.plain(10.5, true, ink, null, true), yy) + 6;
+            const colA = contentW * 0.3, x0 = left + contentW * 0.12;
+            for (const j of jury) {
+                const k = j.indexOf(":");
+                const role = k > 0 ? j.substring(0, k).trim() : "";
+                const name = k > 0 ? j.substring(k + 1).trim() : j.trim();
+                const nl = this.layout(name, this.plain(10.5, false), contentW * 0.76 - colA, "LEFT");
+                if (role) drawText(this.c, role + " :", x0, yy + nl.getLineBaseline(0), this.plain(10.5, true));
+                this.drawAt(nl, x0 + colA, yy);
+                yy += nl.height + 3;
+            }
+            yy += 12;
+        }
+        if (doc.group) yy += this.centered(doc.group, this.tp(10.5, false, true, ink), yy) + 4;
+        if (doc.date) {
+            const by = Math.max(yy + 20, ph - 64);
+            this.centered(doc.yearLabel + " : " + doc.date, this.plain(12, true), by);
+        }
+    }
+
+    tocPage(fresh = true) {
+        if (fresh) this.newPage(true);
         const { doc, left, contentW, accent, ink } = this;
         const t = this.layout(doc.tocTitle, this.tp(13, true, false, accent, this.fonts.head), contentW, "LEFT");
         this.drawAt(t, left, this.y); this.y += t.height + 8;
@@ -517,7 +591,7 @@ class PagePainter {
             if (b.type !== "HEADING" || b.level < 1 || b.level > 2) return;
             const label = this.labels[i] || b.text;
             const indent = b.level === 1 ? 0 : 24;
-            const num = this.knownPages.has(i) ? String(this.knownPages.get(i)) : "";
+            const num = this.knownPages.has(i) ? this.pageLabel(this.knownPages.get(i), this.knownMain) : "";
             const np = this.tp(10.5, b.level === 1, false, ink); np.align = doc.rtl ? "left" : "right";
             const numW = measure(this.c, num, np) + 8;
             const l = this.layout(label, this.tp(10.5, b.level === 1, false, ink), contentW - indent - numW - 30, "LEFT");
@@ -551,6 +625,9 @@ class PagePainter {
             case "SPACER": this.y += 10; break;
             case "PAGE_BREAK": this.newPage(); break;
             case "DIVIDER": this.ensure(10); this.y += 4; this.line(this.left, this.y, this.left + this.contentW, this.y, this.accent, 1); this.y += 10; break;
+            case "MATH": this.math(b); break;
+            case "TOC": if (this.y > this.top + 1) this.newPage(); this.tocPage(false); this.newPage(); break;
+            case "MAIN": if (this.y > this.top + 1) this.newPage(); this.mainStart = this.pageNo; break;
             default: break;
         }
     }
@@ -616,6 +693,28 @@ class PagePainter {
         if (st === "UNDERLINE") { this.y += 4; this.line(left, this.y, left + contentW, this.y, this.accent2, 1.2); this.y += 2; }
         else if (st === "CLASSIC") { this.y += 5; this.line(left + contentW * 0.25, this.y, left + contentW * 0.75, this.y, this.accent2, 0.7); }
         this.y += 9;
+    }
+
+    /** Équation affichée, centrée, numéro « (n) » à droite. */
+    math(b) {
+        const { left, contentW, doc } = this;
+        const size = 12.5;
+        const box = mathBox(this.c, b.text, size, true);
+        const numW = b.num ? 34 : 0;
+        const maxW = contentW - 2 * numW;
+        const s = box.w > maxW ? maxW / box.w : 1;
+        const h = (box.asc + box.desc) * s;
+        this.y += 4;
+        this.ensure(h + 8);
+        const x = left + (contentW - box.w * s) / 2;
+        const base = this.y + box.asc * s;
+        const c = this.c;
+        c.save(); c.translate(x, base); c.scale(s, s); drawMath(c, box, 0, 0, css(this.ink)); c.restore();
+        if (b.num) {
+            const p = { ...this.tp(10.5, false, false, this.ink), align: doc.rtl ? "left" : "right" };
+            drawText(c, b.num, doc.rtl ? left : left + contentW, base - size * 0.26 * s + 3.6, p);
+        }
+        this.y += h + 10;
     }
 
     paragraph(b) {

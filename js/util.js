@@ -17,6 +17,8 @@ export class SB {
     constructor(s = "") { this.s = String(s); }
     append(x) { this.s += String(x); return this; }
     get length() { return this.s.length; }
+    substring(a, b) { return this.s.substring(a, b); }
+    setLength(n) { this.s = this.s.substring(0, n); }
     toString() { return this.s; }
 }
 

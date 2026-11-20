@@ -145,7 +145,7 @@ export class B extends Doc {
         for (const raw of String(text).split("\n")) {
             const l = raw.trim();
             if (!l) flush();
-            else if (l.startsWith("#")) { flush(); this.heading(l.replace(/^#+/, "").trim(), subLevel); }
+            else if (l.startsWith("#")) { flush(); this.heading(l.replace(/^#+/, "").trim(), subLevel + Math.min(1, l.match(/^#+/)[0].length - 1)); }
             else if (/^[-•*]/.test(l)) bl.push(l.replace(/^[-•*]+/, "").trim());
             else { flush(); this.para(l); }
         }

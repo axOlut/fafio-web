@@ -1,6 +1,6 @@
 // Tous les types de documents proposés par FAFIO (copie de Catalog.kt).
 import { Block, Slide, lines } from "../doc.js";
-import { t, F, G, TODAY, YEAR, Form, B, imgKey, capKey, hasImg, number, formatNumber } from "./model.js";
+import { t, F, G, TODAY, YEAR, Form, B, imgKey, capKey, hasImg, number, formatNumber, academicYear } from "./model.js";
 import { themeOf } from "./themes.js";
 import { membersGroup, members, memberNames, applyMembers, measureTable } from "./science.js";
 
@@ -49,7 +49,8 @@ export const COVER = [
 ];
 
 const NO_IMAGE = new Set(["authors", "attendees", "absents", "agenda", "columns", "fields", "options", "data", "sender_address", "recipient",
-    "org_details", "closing", "purpose", "attachments", "copies", "references", "calc", "desc"]);
+    "org_details", "closing", "purpose", "attachments", "copies", "references", "calc", "desc",
+    "author_info", "director", "supervisors", "jury", "abbreviations", "epigraph", "dedication", "faculty"]);
 
 /** Une rubrique peut-elle recevoir une image ? */
 export function allowsImage(type, f) {
@@ -256,7 +257,10 @@ const TP = {
                 if (!block) continue;
                 n++;
                 const title = String(tb.title || "").trim();
-                d.add(Block.para(t("Tableau", "Table", "جدول").get(l) + " " + n + (title ? " : " + title : ""), "CENTER", true).size(10));
+                const cap = Block.para("", "CENTER", true).size(10);
+                cap.legend = title;
+                cap.tableCaption = true;
+                d.add(cap);
                 d.add(block);
             }
             d.content(f.values, "measures", "TABLE");
@@ -898,7 +902,154 @@ const TABLEAU = {
 
 // ------------------------------------------------------------ Registre
 
-export const TYPES = [TPE, TP, STAGE, ACTIVITE, REUNION, CV, MOTIVATION, EXPOSE, PITCH, LETTRE, ATTESTATION, NOTE, FICHE, QUESTIONNAIRE, SUIVI, CHART, TABLEAU];
+
+// ------------------------------------------------------------ Mémoire / soutenance
+
+const MEMOIRE_COVER = [
+    F("cv_header_fr", t("En-tête, colonne de gauche (français)", "Header, left column (French)", "الترويسة، العمود الأيسر (بالفرنسية)"), { type: ML,
+        hint: t("Une ligne par niveau. Garde les lignes ***** pour les séparateurs.", "One line per level. Keep the ***** lines as separators.", "سطر لكل مستوى. احتفظ بأسطر ***** كفواصل."), def: HEADER_FR }),
+    F("cv_header_en", t("En-tête, colonne de droite (anglais)", "Header, right column (English)", "الترويسة، العمود الأيمن (بالإنجليزية)"), { type: ML, def: HEADER_EN }),
+    F("cv_logo_left", t("Logo de l'université ou de l'école", "University or school logo", "شعار الجامعة أو المدرسة"), { type: "IMAGE" }),
+    F("cv_border", t("Bordure autour de la page de garde", "Border around the cover page", "إطار حول صفحة الغلاف"), { type: "CHOICE",
+        options: [t("Non", "No", "لا"), t("Oui", "Yes", "نعم")], def: "1" }),
+    F("cv_year", t("Année académique", "Academic year", "السنة الجامعية"), { def: YEAR }),
+];
+
+const CHAPTERS = G("chapters", t("Chapitres", "Chapters", "الفصول"), t("Chapitre", "Chapter", "الفصل"), [
+    F("title", t("Titre du chapitre", "Chapter title", "عنوان الفصل"), { required: true }),
+    F("content", t("Contenu", "Content", "المحتوى"), { type: ML,
+        hint: t("« # Titre » = sous-partie (I.1), « ## Titre » = sous-sous-partie (I.1.1), « - » = puce. Formules, images, graphiques et tableaux : boutons sous le champ.",
+            "\"# Title\" = section (I.1), \"## Title\" = subsection (I.1.1), \"-\" = bullet. Formulas, images, charts and tables: buttons below the field.",
+            "« # عنوان » = جزء (I.1)، « ## عنوان » = جزء فرعي (I.1.1)، « - » = نقطة. المعادلات والصور والرسوم والجداول: الأزرار أسفل الحقل.") }),
+], { minItems: 1, startItems: 2 });
+
+const MEMOIRE = {
+    id: "memoire", module: "REPORTS", coverFields: MEMOIRE_COVER, supportsCover: true, defaultCover: true, formats: ALL,
+    title: t("Mémoire / soutenance", "Thesis / dissertation", "مذكرة تخرج"),
+    description: t("Licence, master : pages préliminaires, chapitres, formules, bibliographie", "Bachelor, master: front matter, chapters, formulas, bibliography",
+        "ليسانس، ماستر: الصفحات التمهيدية، الفصول، المعادلات، المراجع"),
+    groups: [CHAPTERS, FIGURES],
+    fields: [
+        F("faculty", t("Faculté, école, département (une ligne par niveau)", "Faculty, school, department (one line per level)", "الكلية، المدرسة، القسم (سطر لكل مستوى)"), { type: ML }),
+        F("degree", t("Diplôme préparé", "Degree", "الشهادة المحضّرة")),
+        F("speciality", t("Option / spécialité", "Option / specialisation", "التخصص")),
+        F("title", t("Thème du mémoire", "Thesis title", "موضوع المذكرة"), { required: true }),
+        F("author", t("Présenté par (nom complet)", "Presented by (full name)", "إعداد (الاسم الكامل)"), { required: true }),
+        F("author_info", t("Matricule, diplôme déjà obtenu… (une ligne par info)", "Student number, previous degree… (one per line)", "رقم التسجيل، الشهادة المحصل عليها… (سطر لكل معلومة)"), { type: ML }),
+        F("director", t("Sous la direction de", "Supervised by", "تحت إشراف"), { type: LIST,
+            hint: t("Une personne par ligne, avec son grade", "One person per line, with their title", "شخص في كل سطر مع رتبته") }),
+        F("supervisors", t("Encadreur(s) (facultatif)", "Co-supervisor(s) (optional)", "المؤطر(ون) (اختياري)"), { type: LIST, hint: H_AUTHORS }),
+        F("jury", t("Membres du jury (facultatif)", "Jury members (optional)", "أعضاء لجنة المناقشة (اختياري)"), { type: LIST,
+            hint: t("Ex. : Président : Pr …  /  Rapporteur : Dr …  /  Examinateur : Dr …", "E.g. Chair: Prof …  /  Reviewer: Dr …  /  Examiner: Dr …", "مثال: الرئيس: أ. …  /  المقرر: د. …  /  الممتحن: د. …") }),
+        F("defense_date", t("Date de soutenance (facultatif)", "Defence date (optional)", "تاريخ المناقشة (اختياري)"), { type: "DATE" }),
+        F("epigraph", t("Épigraphe (facultatif)", "Epigraph (optional)", "تصدير (اختياري)"), { type: ML }),
+        F("dedication", t("Dédicace", "Dedication", "إهداء"), { type: ML }),
+        F("thanks", t("Remerciements", "Acknowledgements", "شكر وتقدير"), { type: ML }),
+        F("abbreviations", t("Sigles et abréviations (facultatif)", "Acronyms and abbreviations (optional)", "المختصرات (اختياري)"), { type: ML,
+            hint: t("Une par ligne : « OMS : Organisation mondiale de la santé »", "One per line: \"WHO: World Health Organization\"", "واحدة في كل سطر: « OMS : المنظمة العالمية للصحة »") }),
+        F("lists", t("Listes des tableaux et des figures", "Lists of tables and figures", "قائمتا الجداول والأشكال"), { type: "CHOICE", options: [t("Oui", "Yes", "نعم"), t("Non", "No", "لا")] }),
+        F("resume", t("Résumé", "Résumé (French summary)", "ملخص"), { type: ML }),
+        F("keywords", t("Mots-clés", "Keywords (French)", "الكلمات المفتاحية")),
+        F("abstract", t("Abstract (en anglais)", "Abstract", "ملخص بالإنجليزية (Abstract)"), { type: ML }),
+        F("keywords_en", t("Keywords (en anglais)", "Keywords", "Keywords (بالإنجليزية)")),
+        F("intro", t("Introduction générale", "Introduction", "مقدمة عامة"), { type: ML,
+            hint: t("« # Titre » pour un sous-titre (contexte, problématique, objectifs…).", "\"# Title\" for a subtitle (background, research question, objectives…).", "« # عنوان » لعنوان فرعي (السياق، الإشكالية، الأهداف…).") }),
+        F("conclusion", t("Conclusion générale", "Conclusion", "خاتمة عامة"), { type: ML }),
+        F("perspectives", t("Perspectives (facultatif)", "Future work (optional)", "الآفاق (اختياري)"), { type: ML }),
+        F("references", t("Références bibliographiques", "References", "المراجع"), { type: LIST, hint: H_ONE_PER_LINE }),
+        F("annexes", t("Annexes (facultatif)", "Appendices (optional)", "ملاحق (اختياري)"), { type: ML }),
+    ],
+    build(f, c) {
+        const l = c.lang;
+        const d = base(f);
+        d.cover = f.cover;
+        d.coverModel = "MEMOIRE";
+        d.title = f.v("title");
+        d.author = [f.v("author"), ...lines(f.v("author_info"))].filter((x) => x).join("\n");
+        d.headerLeft = f.v("cv_header_fr"); d.headerRight = f.v("cv_header_en"); d.logoLeftRef = f.v("cv_logo_left");
+        d.institution = f.v("faculty");
+        const degree = f.v("degree");
+        d.extra = [
+            degree ? t("Mémoire présenté en vue de l'obtention du diplôme de", "Thesis submitted in partial fulfilment of the requirements for the degree of", "مذكرة مقدمة لنيل شهادة").get(l) + " " + degree : "",
+            labelled(t("Option", "Option", "التخصص").get(l), f.v("speciality")),
+        ].filter((x) => x).join("\n");
+        d.themeLabel = t("THÈME", "TOPIC", "الموضوع").get(l);
+        d.participantsLabel = t("Présenté par :", "Presented by:", "إعداد:").get(l);
+        d.supervisionLabel = t("Sous la direction de :", "Under the supervision of:", "تحت إشراف:").get(l);
+        const coWord = t("Encadreur", "Co-supervisor", "المؤطر").get(l);
+        d.supervision = [...lines(f.v("director")), ...lines(f.v("supervisors")).map((x) => `${coWord} : ${x}`)].join("\n");
+        d.membersLabel = t("Devant le jury composé de :", "Before the jury:", "أمام لجنة المناقشة المكونة من:").get(l);
+        d.infoLines = f.v("jury");
+        d.group = f.v("defense_date") ? t("Soutenu publiquement le", "Publicly defended on", "نوقشت علنيًا يوم").get(l) + " " + f.v("defense_date") : "";
+        d.date = f.v("cv_year") || academicYear();
+        d.yearLabel = t("Année académique", "Academic year", "السنة الجامعية").get(l);
+        d.pageBorder = f.cover && f.v("cv_border") !== "0";
+        d.romanPrelim = true;
+        d.chapters = true;
+        d.chapterWord = t("CHAPITRE", "CHAPTER", "الفصل").get(l);
+        d.breakBeforeH1 = true;
+        d.toc = true;
+        d.tocTitle = t("TABLE DES MATIÈRES", "TABLE OF CONTENTS", "الفهرس").get(l);
+        d.pageWordFooter = true;
+        if (!d.cover) { d.docTitle(f.v("title")); d.line(f.v("author"), "CENTER", true); d.line(degree, "CENTER"); }
+        if (f.v("epigraph")) {
+            for (let i = 0; i < 26; i++) d.add(Block.spacer());
+            d.add(Block.para(f.v("epigraph"), "RIGHT", false).setItalic());
+        }
+        if (f.v("dedication")) {
+            d.heading(t("Dédicace", "Dedication", "إهداء").get(l));
+            for (let i = 0; i < 10; i++) d.add(Block.spacer());
+            d.add(Block.para(f.v("dedication"), "RIGHT", false).setItalic());
+        }
+        d.rubric(f.values, "thanks", t("Remerciements", "Acknowledgements", "شكر وتقدير").get(l));
+        d.add(Block.of("TOC"));
+        const abbr = lines(f.v("abbreviations")).map((line) => {
+            const m = line.search(/[:;\t]/);
+            return m > 0 ? [line.substring(0, m).trim(), line.substring(m + 1).trim()] : [line, ""];
+        });
+        if (abbr.length) {
+            d.heading(t("Liste des abréviations", "List of abbreviations", "قائمة المختصرات").get(l));
+            d.add(Block.table([t("Sigle", "Acronym", "المختصر").get(l), t("Signification", "Meaning", "المعنى").get(l)], abbr));
+        }
+        if (f.v("lists") !== "1") {
+            d.heading(t("Liste des tableaux", "List of tables", "قائمة الجداول").get(l));
+            const lt = Block.of("LIST"); lt.text = "tab"; d.add(lt);
+            d.heading(t("Liste des figures", "List of figures", "قائمة الأشكال").get(l));
+            const lf = Block.of("LIST"); lf.text = "fig"; d.add(lf);
+        }
+        if (f.v("resume")) {
+            d.heading(t("Résumé", "Résumé", "ملخص").get(l));
+            d.para(f.v("resume"));
+            if (f.v("keywords")) d.add(Block.para(t("Mots-clés", "Keywords", "الكلمات المفتاحية").get(l) + " : " + f.v("keywords"), "LEFT", false).setItalic());
+        }
+        if (f.v("abstract")) {
+            d.heading("Abstract");
+            d.para(f.v("abstract"));
+            if (f.v("keywords_en")) d.add(Block.para("Keywords: " + f.v("keywords_en"), "LEFT", false).setItalic());
+        }
+        d.add(Block.of("MAIN"));
+        if (f.v("intro") || hasImg(f.values, "intro")) {
+            d.heading(t("Introduction générale", "Introduction", "مقدمة عامة").get(l));
+            d.content(f.values, "intro", "RICH");
+        }
+        for (const ch of f.items("chapters")) {
+            const tt = String(ch.title || "").trim();
+            if (!tt && !String(ch.content || "").trim()) continue;
+            d.heading(tt || t("Chapitre", "Chapter", "الفصل").get(l));
+            d.rich(String(ch.content || ""));
+        }
+        if (f.v("conclusion") || f.v("perspectives")) {
+            d.heading(t("Conclusion générale", "Conclusion", "خاتمة عامة").get(l));
+            d.content(f.values, "conclusion", "RICH");
+            d.rubric(f.values, "perspectives", t("Perspectives", "Future work", "الآفاق").get(l), "RICH", 2);
+        }
+        d.rubric(f.values, "references", t("Références bibliographiques", "References", "المراجع").get(l), "BULLETS");
+        d.rubric(f.values, "annexes", t("Annexes", "Appendices", "ملاحق").get(l), "RICH");
+        return d;
+    },
+};
+
+export const TYPES = [TPE, TP, MEMOIRE, STAGE, ACTIVITE, REUNION, CV, MOTIVATION, EXPOSE, PITCH, LETTRE, ATTESTATION, NOTE, FICHE, QUESTIONNAIRE, SUIVI, CHART, TABLEAU];
 for (const ty of TYPES) { ty.groups = ty.groups || []; ty.coverFields = ty.coverFields || []; ty.defaultCoverModel = ty.defaultCoverModel || 0; }
 
 export const typeById = (id) => TYPES.find((x) => x.id === id);

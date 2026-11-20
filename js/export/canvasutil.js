@@ -67,6 +67,8 @@ export function ellipsize(ctx, s, p, maxW) {
 }
 
 // ---------------------------------------------------------------- Mise en page
+import { inlineSpans } from "../math.js";
+import { mathBox, drawMath } from "./mathdraw.js";
 
 const ASC = 0.93, DESC = 0.24, MULT = 1.18;
 
@@ -83,8 +85,16 @@ export function layout(ctx, text, p, width, align = "LEFT", rtl = false) {
         const parts = String(r.text).split("\n");
         parts.forEach((part, i) => {
             if (i > 0) paras.push([]);
-            const tokens = part.match(/\s+|[^\s]+/g) || [];
-            for (const tk of tokens) paras[paras.length - 1].push({ text: tk, p: rp, space: /^\s+$/.test(tk) });
+            const out = paras[paras.length - 1];
+            const words = (seg) => { for (const tk of seg.match(/\s+|[^\s]+/g) || []) out.push({ text: tk, p: rp, space: /^\s+$/.test(tk) }); };
+            // formules « $…$ » dessinées dans la ligne
+            let last = 0;
+            for (const sp of inlineSpans(part)) {
+                words(part.slice(last, sp[0]));
+                out.push({ text: "", math: part.slice(sp[2], sp[3]), p: rp, space: false });
+                last = sp[1];
+            }
+            words(part.slice(last));
         });
     }
     const lines = [];
@@ -96,13 +106,17 @@ export function layout(ctx, text, p, width, align = "LEFT", rtl = false) {
             cur = []; w = 0;
         };
         for (const tk of toks) {
-            tk.w = measure(ctx, tk.text, tk.p);
+            if (tk.math != null) {
+                try { tk.box = mathBox(ctx, tk.math, tk.p.size, false); } catch (e) { tk.box = null; }
+                if (!tk.box) { tk.text = "$" + tk.math + "$"; tk.math = null; }
+            }
+            tk.w = tk.box ? tk.box.w : measure(ctx, tk.text, tk.p);
             if (tk.space && cur.length === 0) continue;
             if (w + tk.w > width && cur.length) {
                 if (tk.space) { push(false); continue; }
                 push(false);
             }
-            if (!tk.space && tk.w > width) {
+            if (!tk.space && tk.w > width && !tk.box) {
                 // mot trop long : coupe caractère par caractère
                 let chunk = "";
                 for (const ch of tk.text) {
@@ -121,9 +135,12 @@ export function layout(ctx, text, p, width, align = "LEFT", rtl = false) {
     const lh = p.size * (ASC + DESC);
     let y = 0;
     lines.forEach((ln, i) => {
+        // une formule haute (fraction…) agrandit sa ligne
+        let up = 0, down = 0;
+        for (const t of ln.toks) if (t.box) { up = Math.max(up, t.box.asc - t.p.size * ASC + 1); down = Math.max(down, t.box.desc - t.p.size * DESC + 1); }
         ln.top = y;
-        ln.baseline = y + p.size * ASC;
-        const h = i === lines.length - 1 ? lh : lh * MULT;
+        ln.baseline = y + up + p.size * ASC;
+        const h = (i === lines.length - 1 ? lh : lh * MULT) + up + down;
         ln.bottom = y + h;
         y += h;
     });
@@ -158,14 +175,16 @@ function drawLine(c, ln, x, y0, width, align, rtl) {
         else cx = x + ln.width;
         for (const t of ln.toks) {
             const w = t.w + (t.space ? extra : 0);
-            if (!t.space) drawText(c, t.text, cx, base, { ...t.p, align: "right" }, true);
+            if (t.box) drawMath(c, t.box, cx - t.w, base, t.p.color);
+            else if (!t.space) drawText(c, t.text, cx, base, { ...t.p, align: "right" }, true);
             cx -= w;
         }
         return;
     }
     let cx = x + start;
     for (const t of ln.toks) {
-        if (!t.space) drawText(c, t.text, cx, base, { ...t.p, align: "left" });
+        if (t.box) drawMath(c, t.box, cx, base, t.p.color);
+        else if (!t.space) drawText(c, t.text, cx, base, { ...t.p, align: "left" });
         else if (t.p.underline) { c.fillStyle = t.p.color; c.fillRect(cx, base + t.p.size * 0.12, t.w + extra, Math.max(0.5, t.p.size * 0.06)); }
         cx += t.w + (t.space ? extra : 0);
     }

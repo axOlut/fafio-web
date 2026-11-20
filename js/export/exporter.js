@@ -10,6 +10,7 @@ import { renderDoc, toPdf } from "./pdf.js";
 import { ensureFont, fontBytes, assetBytes, assetText } from "./fonts.js";
 import { Images, imageRefs } from "../data/storage.js";
 import { compressZip } from "../util.js";
+import { expand, linearize, SEP } from "../rich.js";
 
 export const MIME = {
     PDF: "application/pdf",
@@ -67,6 +68,7 @@ async function theme(data, lang, forWord) {
 /** Construit le document complet, images comprises. */
 export async function buildDoc(type, data, lang, forWord = false) {
     const doc = buildFrom(type, data, ctxFor(lang));
+    expand(doc, data.values || {});
     doc.rtl = lang === "ar";
     doc.style = data.style || "MODERN";
     doc.theme = await theme(data, lang, forWord);
@@ -79,6 +81,8 @@ export async function buildDoc(type, data, lang, forWord = false) {
 // ---------------------------------------------------------------- Figures
 
 const word = (lang) => (lang === "ar" ? "الشكل" : "Figure");
+const tableWord = (lang) => (lang === "en" ? "Table" : lang === "ar" ? "الجدول" : "Tableau");
+const listTitle = { fig: { fr: "Aucune figure", en: "No figure", ar: "لا توجد أشكال" }, tab: { fr: "Aucun tableau", en: "No table", ar: "لا توجد جداول" } };
 
 function caption(legend) {
     const b = Block.para("", "CENTER", false).setItalic().setMuted().size(9.5);
@@ -98,10 +102,26 @@ export function parsePoints(text) {
     return out;
 }
 
+/** Graphique inséré dans un champ : « chart␟type␟légende␟axe x␟axe y␟données ». */
+function chartImage(text, color) {
+    const o = String(text || "").split(SEP);
+    const points = parsePoints(o[5] || "");
+    if (!points.length) return null;
+    const type = { 1: "BAR", 2: "PIE", 3: "REG" }[o[1]] || "LINE";
+    return renderChart({ type, title: "", xLabel: o[3] || "", yLabel: o[4] || "", points, accent: color });
+}
+
 function applyFigures(doc, data, lang, images) {
-    // emplacements d'images des rubriques
+    // emplacements d'images des rubriques et graphiques insérés dans le texte
     for (let i = 0; i < doc.blocks.length;) {
         const b = doc.blocks[i];
+        if (b.type === "CHART") {
+            doc.blocks.splice(i, 1);
+            const img = chartImage(b.text, doc.theme.primary);
+            const blk = img ? Block.image(img.png, img.width, img.height, "png") : null;
+            if (blk) { doc.blocks.splice(i, 0, blk, caption(b.legend || "")); i += 2; }
+            continue;
+        }
         if (b.type === "SLOT") {
             doc.blocks.splice(i, 1);
             const l = images.get(b.ref);
@@ -129,11 +149,27 @@ function applyFigures(doc, data, lang, images) {
         const legend = String(item.caption || "").trim(), after = String(item.after || "").trim();
         if (slidesMode) insertSlide(doc, v, legend, after); else insertBlocks(doc, v, legend, after);
     }
-    let n = 0;
+    let n = 0, nt = 0;
+    const figs = [], tabs = [];
     for (const b of doc.blocks) {
         if (b.legend == null) continue;
+        if (b.tableCaption) {
+            nt++;
+            b.text = b.legend ? `${tableWord(lang)} ${nt} : ${b.legend}` : `${tableWord(lang)} ${nt}`;
+            tabs.push(b.text);
+            continue;
+        }
         n++;
         b.text = b.legend ? `${word(lang)} ${n} : ${b.legend}` : `${word(lang)} ${n}`;
+        figs.push(b.text);
+    }
+    // listes des figures et des tableaux (mémoire)
+    for (let i = 0; i < doc.blocks.length; i++) {
+        const b = doc.blocks[i];
+        if (b.type !== "LIST") continue;
+        const items = b.text === "tab" ? tabs : figs;
+        const l = lang === "en" || lang === "ar" ? lang : "fr";
+        doc.blocks[i] = items.length ? Block.para(items.join("\n"), "LEFT", false) : Block.para(listTitle[b.text === "tab" ? "tab" : "fig"][l], "LEFT", false).setItalic().setMuted();
     }
     for (const s of doc.slides) {
         if (s.legend == null || !s.png) continue;
@@ -208,6 +244,7 @@ export async function exportFile(type, data, lang, format) {
     if (format === "DOCX") bytes = await compressZip(writeDocx(doc));
     else if (format === "PPTX") {
         if (!doc.slides.length) throw new Error("no slides");
+        linearize(doc);
         bytes = await compressZip(writePptx(doc, await templates()));
     } else {
         const r = await renderDoc(doc, 2.5);

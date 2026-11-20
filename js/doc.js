@@ -38,6 +38,7 @@ export class Block {
         this.type = type; this.text = ""; this.level = 1; this.align = "LEFT"; this.bold = false; this.italic = false;
         this.sizePt = 0; this.accent = false; this.muted = false; this.items = []; this.header = []; this.rows = [];
         this.png = null; this.pxW = 0; this.pxH = 0; this.imgType = "png"; this.lines = 1; this.ref = ""; this.legend = null; this.rowHeader = false;
+        this.tableCaption = false; this.num = "";
     }
     static heading(text, level) { const b = new Block("HEADING"); b.text = safe(text); b.level = level; if (level === 0) b.align = "CENTER"; return b; }
     static para(text, align, bold) {
@@ -57,6 +58,13 @@ export class Block {
     static slot(ref, legend) {
         if (!ref || !String(ref).trim()) return null;
         const b = new Block("SLOT"); b.ref = String(ref).trim(); b.legend = legend == null ? "" : String(legend).trim(); return b;
+    }
+    static of(type) { return new Block(type); }
+    static math(tex) { const b = new Block("MATH"); b.text = safe(tex); b.align = "CENTER"; return b; }
+    withText(t) {
+        const b = new Block(this.type); b.text = safe(t);
+        b.level = this.level; b.align = this.align; b.bold = this.bold; b.italic = this.italic; b.sizePt = this.sizePt; b.accent = this.accent; b.muted = this.muted;
+        return b;
     }
     static spacer() { return new Block("SPACER"); }
     static pageBreak() { return new Block("PAGE_BREAK"); }
@@ -79,9 +87,14 @@ export class Slide {
 }
 
 const UNNUMBERED = ["introduction", "conclusion", "références", "references", "reference", "bibliographie", "bibliography",
-    "remerciements", "acknowledg", "annexe", "appendix", "résumé", "abstract", "sommaire", "plan de travail",
+    "remerciements", "acknowledg", "annexe", "appendix", "appendices", "résumé", "abstract", "sommaire", "plan de travail",
+    "dédicace", "dedication", "liste des", "list of", "table des matières", "table of contents", "épigraphe", "avant-propos", "foreword",
+    "glossaire", "glossary", "sigles", "abréviations", "abbreviations", "إهداء", "قائمة", "ملاحق",
     "مقدمة", "خاتمة", "المراجع", "شكر", "ملخص"];
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"];
+
+export const roman = (n) => (n >= 1 && n <= ROMAN.length ? ROMAN[n - 1] : String(n));
+export const romanLower = (n) => roman(n).toLowerCase();
 
 export class Doc {
     constructor() {
@@ -92,6 +105,7 @@ export class Doc {
         this.memberHeader = []; this.members = []; this.membersLabel = "MEMBRES DU GROUPE"; this.banner = "";
         this.gradeBoxes = false; this.gradeLabel = "NOTE FINALE"; this.observationLabel = "OBSERVATION"; this.yearLabel = "Année académique";
         this.pageBorder = false; this.breakBeforeH1 = false;
+        this.romanPrelim = false; this.chapters = false; this.chapterWord = "CHAPITRE";
         this.toc = false; this.tocTitle = "PLAN DE TRAVAIL"; this.numberHeadings = false; this.pageWordFooter = false;
         this.style = "MODERN"; this.theme = new DocTheme(); this.rtl = false; this.landscape = false;
         this.blocks = []; this.slides = [];
@@ -101,11 +115,19 @@ export class Doc {
 
     headingLabels() {
         const out = [];
-        let n1 = 0, n2 = 0;
+        let n1 = 0, n2 = 0, n3 = 0, inChapter = false;
         for (const b of this.blocks) {
             if (b.type !== "HEADING" || b.level <= 0) { out.push(null); continue; }
             const t = b.text;
             const lower = t.toLowerCase();
+            if (this.chapters) {
+                if (b.level === 1 && UNNUMBERED.some((u) => lower.startsWith(u))) { inChapter = false; out.push(t.toUpperCase()); continue; }
+                if (b.level === 1) { n1++; n2 = 0; n3 = 0; inChapter = true; out.push(this.chapterWord + " " + roman(n1) + " : " + t.toUpperCase()); }
+                else if (b.level === 2 && inChapter) { n2++; n3 = 0; out.push(roman(n1) + "." + n2 + ". " + t); }
+                else if (b.level >= 3 && inChapter && n2 > 0) { n3++; out.push(roman(n1) + "." + n2 + "." + n3 + ". " + t); }
+                else out.push(t);
+                continue;
+            }
             if (!this.numberHeadings || UNNUMBERED.some((u) => lower.startsWith(u))) {
                 out.push(b.level === 1 && this.numberHeadings ? t.toUpperCase() : t);
                 continue;

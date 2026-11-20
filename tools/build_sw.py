@@ -4,9 +4,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 files = []
 for d, _, fs in os.walk(ROOT):
     rel = os.path.relpath(d, ROOT)
-    if rel.startswith(('.git', 'tools', 'docs')) or '/.' in rel: continue
+    if rel.startswith(('.git', 'tools', 'docs', 'server')) or '/.' in rel: continue
     for f in sorted(fs):
-        if f in ('sw.js', 'README.md', '.nojekyll') or f.startswith('.'): continue
+        if f in ('sw.js', 'README.md', '.nojekyll') or f.startswith('.') or f.startswith('zz_') or f == 'cases.txt': continue
         files.append(os.path.normpath(os.path.join(rel, f)).replace(os.sep, '/'))
 files.sort()
 h = hashlib.sha256()
