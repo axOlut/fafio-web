@@ -5,6 +5,7 @@ import { css, family, SERIF, SANS, paint, measure, drawText, ellipsize, layout, 
 import { font as fontSpec } from "../forms/themes.js";
 import { linearize } from "../rich.js";
 import { mathBox, drawMath } from "./mathdraw.js";
+import { CvPainter } from "./cv.js";
 
 const WHITE = 0xFFFFFF;
 
@@ -42,6 +43,11 @@ class Pages {
 export async function renderDoc(doc, scale = 2) {
     linearize(doc, true);
     await preloadImages(doc);
+    if (doc.cv) {
+        const pages = new Pages(595, 842, scale, false);
+        new CvPainter(doc, pages, new Faces(doc.theme)).paint();
+        return { pages: pages.list, w: 595, h: 842 };
+    }
     if (doc.blocks.length === 0 && doc.slides.length > 0) {
         const pages = new Pages(960, 540, scale, false);
         new SlidePainter(doc, pages).paint();
@@ -65,6 +71,8 @@ class PagePainter {
     constructor(doc, pages, totalPages, knownPages, knownMain = 0) {
         this.doc = doc; this.pages = pages; this.totalPages = totalPages; this.knownPages = knownPages;
         this.knownMain = knownMain; this.mainStart = 0;
+        /** Taille du texte choisie (1 sur les pages de garde, qui gardent leur mise en page). */
+        this.fs = 1;
         this.headingPages = new Map();
         const th = doc.theme;
         this.theme = th; this.lightColor = th.light; this.accent2 = th.accent; this.hasBg = th.coverBg != null;
@@ -88,6 +96,7 @@ class PagePainter {
             else this.cover();
             if (d.pageBorder) this.pageBorder();
         }
+        this.fs = d.fontScale || 1;
         this.labels = d.headingLabels();
         if (d.toc && !d.blocks.some((b) => b.type === "TOC")) this.tocPage();
         this.newPage(true);
@@ -131,10 +140,12 @@ class PagePainter {
     rrectStroke(x0, y0, x1, y1, r, color, width, alpha) { const c = this.c; roundRect(c, x0, y0, x1 - x0, y1 - y0, r); c.strokeStyle = css(color, alpha); c.lineWidth = width; c.stroke(); }
 
     tp(size, bold, italic, color, face) {
+        size *= this.fs;
         if (face) return paint(size, { family: face.family, bold: face.bold, italic, color: css(color) });
         return paint(size, { family: this.fonts.body.family, bold, italic, color: css(color) });
     }
     plain(size, bold, color = this.ink, face = null, underline = false) {
+        size *= this.fs;
         if (face) return paint(size, { family: face.family || face, bold: face.bold !== undefined ? face.bold : bold, color: css(color), underline });
         return paint(size, { family: SERIF, bold, color: css(color), underline });
     }
@@ -698,7 +709,7 @@ class PagePainter {
     /** Équation affichée, centrée, numéro « (n) » à droite. */
     math(b) {
         const { left, contentW, doc } = this;
-        const size = 12.5;
+        const size = 12.5 * this.fs;
         const box = mathBox(this.c, b.text, size, true);
         const numW = b.num ? 34 : 0;
         const maxW = contentW - 2 * numW;
@@ -841,7 +852,7 @@ class SlidePainter {
         this.bg = doc.theme.slideBg ? imageOf(doc.theme.slideBg.data) : null;
     }
     start() { this.n++; return this.pages.start(); }
-    tp(size, color, face, italic = false) { return paint(size, { family: face.family, bold: face.bold, italic, color: css(color) }); }
+    tp(size, color, face, italic = false) { return paint(size * this.doc.fontScale, { family: face.family, bold: face.bold, italic, color: css(color) }); }
     lay(c, text, p, width, align) { return layout(c, text, p, width, align, this.doc.rtl); }
     drawBg(c) { if (!this.bg) return false; c.drawImage(this.bg, 0, 0, this.w, this.h); return true; }
     panel(c, x0, y0, x1, y1) {

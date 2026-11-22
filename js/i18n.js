@@ -191,7 +191,18 @@ export default {
   "pro_pay_wait": "Vérification du paiement…",
   "pro_pay_ok": "Paiement reçu : +%1$s crédits. Ton code (garde-le) : %2$s",
   "pro_pay_fail": "Le paiement n'a pas abouti.",
-  "pro_web_note": "Sur le web, tu achètes des crédits par Mobile Money. Le PDF reste gratuit."
+  "pro_web_note": "Sur le web, tu achètes des crédits par Mobile Money. Le PDF reste gratuit.",
+  "color_title": "Couleur",
+  "color_sub": "La couleur des titres, bandeaux et tableaux, sur le même thème.",
+  "color_auto": "Auto",
+  "size_title": "Taille du texte",
+  "size_sub": "Glisse vers la droite pour agrandir, vers la gauche pour réduire.",
+  "tab_theme": "Thème",
+  "tab_color": "Couleur",
+  "tab_size": "Taille",
+  "cv_model_title": "Modèle de CV",
+  "cv_model_sub": "Choisis la mise en page, puis la couleur.",
+  "updating": "Mise à jour…"
  },
  "en": {
   "welcome_title": "Welcome to:",
@@ -382,7 +393,18 @@ export default {
   "pro_pay_wait": "Checking your payment…",
   "pro_pay_ok": "Payment received: +%1$s credits. Your code (keep it): %2$s",
   "pro_pay_fail": "The payment did not go through.",
-  "pro_web_note": "On the web, you buy credits with Mobile Money. PDF stays free."
+  "pro_web_note": "On the web, you buy credits with Mobile Money. PDF stays free.",
+  "color_title": "Colour",
+  "color_sub": "The colour of titles, bands and tables, on the same theme.",
+  "color_auto": "Auto",
+  "size_title": "Text size",
+  "size_sub": "Slide right to enlarge, left to reduce.",
+  "tab_theme": "Theme",
+  "tab_color": "Colour",
+  "tab_size": "Size",
+  "cv_model_title": "CV layout",
+  "cv_model_sub": "Pick the layout, then the colour.",
+  "updating": "Updating…"
  },
  "ar": {
   "welcome_title": "مرحبًا بك في:",
@@ -573,6 +595,17 @@ export default {
   "pro_pay_wait": "جارٍ التحقق من الدفع…",
   "pro_pay_ok": "تم استلام الدفع: +%1$s رصيد. رمزك (احتفظ به): %2$s",
   "pro_pay_fail": "لم تكتمل عملية الدفع.",
-  "pro_web_note": "على الويب، تشتري الرصيد عبر الهاتف المحمول. يبقى PDF مجانيًا."
+  "pro_web_note": "على الويب، تشتري الرصيد عبر الهاتف المحمول. يبقى PDF مجانيًا.",
+  "color_title": "اللون",
+  "color_sub": "لون العناوين والأشرطة والجداول، مع نفس التصميم.",
+  "color_auto": "تلقائي",
+  "size_title": "حجم النص",
+  "size_sub": "اسحب يمينًا للتكبير ويسارًا للتصغير.",
+  "tab_theme": "التصميم",
+  "tab_color": "اللون",
+  "tab_size": "الحجم",
+  "cv_model_title": "نموذج السيرة",
+  "cv_model_sub": "اختر التصميم ثم اللون.",
+  "updating": "جارٍ التحديث…"
  }
 };

@@ -5,7 +5,7 @@
 
 
 /** Génère un vrai fichier Word (.docx) modifiable, sans bibliothèque externe. */
-import { Zip, SB, esc, XML_HEAD } from "./util.js";
+import { Zip, SB, esc, XML_HEAD, hex } from "./util.js";
 import { Block, lines as docLines } from "./doc.js";
 import * as MathTex from "./math.js";
 
@@ -49,7 +49,9 @@ export function writeDocx(doc) {
                 + "</Relationships>");
         Zip.put(zip, "docProps/core.xml", Zip.coreProps(doc.title, doc.author.isEmpty() ? "FAFIO" : doc.author));
         Zip.put(zip, "word/document.xml", body);
-        Zip.put(zip, "word/styles.xml", styles());
+        let st = styles();
+        if (doc.fontScale != 1 && doc.cv == null) st = scaleAttr(scaleAttr(st, "<w:sz w:val=\"", doc.fontScale), "<w:szCs w:val=\"", doc.fontScale);
+        Zip.put(zip, "word/styles.xml", st);
         Zip.put(zip, "word/numbering.xml", numbering());
         Zip.put(zip, "word/settings.xml", XML_HEAD + "<w:settings xmlns:w=\"" + W + "\">"
                 + (embedded.isEmpty() ? "" : "<w:embedTrueTypeFonts/>")
@@ -80,6 +82,10 @@ export function writeDocx(doc) {
                 .append("xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" ")
                 .append("xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" ")
                 .append("xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\" xmlns:m=\"").append(MathTex.M_NS).append("\"><w:body>");
+        if (doc.cv != null) {
+            cvBody(b);
+            return b.toString();
+        }
         if (doc.cover) {
             switch (doc.coverModel) {
                 case "EXPOSE": coverExpose(b); break;
@@ -88,6 +94,7 @@ export function writeDocx(doc) {
                 default: if (hasBg()) coverSimpleBg(b); else cover(b);
             }
         }
+        let bodyStart = b.length;
         labels = doc.headingLabels();
         let tocBlock = false;
         for (const x of doc.blocks) if (x.type == "TOC") tocBlock = true;
@@ -109,7 +116,286 @@ export function writeDocx(doc) {
                 .append(mainDone && doc.romanPrelim ? "<w:pgNumType w:start=\"1\"/>" : "")
                 .append(doc.cover && !doc.pageBorder && !(mainDone && doc.romanPrelim) ? "<w:titlePg/>" : "")
                 .append("</w:sectPr></w:body></w:document>");
+        let out = b.toString();
+        // Taille du texte choisie : tout le contenu après la page de garde
+        if (doc.fontScale != 1) {
+            out = out.substring(0, bodyStart) + scaleAttr(scaleAttr(out.substring(bodyStart), "<w:sz w:val=\"", doc.fontScale), "<w:szCs w:val=\"", doc.fontScale);
+        }
+        return out;
+    }
+
+    /** Multiplie les nombres qui suivent [key] (tailles de police). */
+    function scaleAttr(xml, key, k) {
+        let out = new SB();
+        let i = 0;
+        while (true) {
+            let j = xml.indexOf(key, i);
+            if (j < 0) break;
+            let st = j + key.length;
+            let e = st;
+            let v = 0;
+            while (e < xml.length && xml.charAt(e) >= '0' && xml.charAt(e) <= '9') {
+                v = v * 10 + (xml.charAt(e) - '0');
+                e++;
+            }
+            out.append(xml.substring(i, st));
+            if (e > st) out.append(Math.max(1, Math.round(v * k)));
+            i = e;
+        }
+        out.append(xml.substring(i));
+        return out.toString();
+    }
+
+    // ------------------------------------------------------------ CV (4 modèles)
+
+    function tintHex(c, t) {
+        let r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, bl = c & 0xFF;
+        r = ~~(r + (255 - r) * t); g = ~~(g + (255 - g) * t); bl = ~~(bl + (255 - bl) * t);
+        return hex(0xFF000000 | (r << 16) | (g << 8) | bl);
+    }
+
+    /** Taille en demi-points multipliée par la taille du texte choisie. */
+    function hp(halfPts) {
+        return Math.max(2, Math.round(halfPts * doc.fontScale));
+    }
+
+    /** Photo ronde (image carrée recadrée en cercle), avec un anneau facultatif. */
+    function cvPhoto(img, d, ring, ringW) {
+        let idx = addImage(img.data, img.type);
+        let id = drawingId++;
+        return "<w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"" + d + "\" cy=\"" + d + "\"/>"
+                + "<wp:effectExtent l=\"" + ringW + "\" t=\"" + ringW + "\" r=\"" + ringW + "\" b=\"" + ringW + "\"/><wp:docPr id=\"" + id + "\" name=\"Photo " + id + "\"/>"
+                + "<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>"
+                + "<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic><pic:nvPicPr><pic:cNvPr id=\"" + id
+                + "\" name=\"photo.jpeg\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rIdImg" + idx + "\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
+                + "<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"" + d + "\" cy=\"" + d + "\"/></a:xfrm><a:prstGeom prst=\"ellipse\"><a:avLst/></a:prstGeom>"
+                + (ring != null ? "<a:ln w=\"" + ringW + "\"><a:solidFill><a:srgbClr val=\"" + ring + "\"/></a:solidFill></a:ln>" : "")
+                + "</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>";
+    }
+
+    function cvPara(pPr, runs) {
+        return "<w:p><w:pPr>" + pPr + bidi() + "</w:pPr>" + runs + "</w:p>";
+    }
+
+    function cvSymbol(kind) {
+        if (kind.equals("mail")) return "\u2709 ";
+        if (kind.equals("phone")) return "\u2706 ";
+        return "\u2302 ";
+    }
+
+    /** Titre de section selon le modèle (side = barre latérale). */
+    function cvTitle(label, side, first, width) {
+        let model = doc.cv.model;
+        let p = accent;
+        if (model.equals("band")) {
+            return cvPara("<w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"2\" w:color=\"" + p + "\"/></w:pBdr><w:keepNext/><w:spacing w:before=\"" + (first ? 120 : 280)
+                    + "\" w:after=\"100\"/>", run("\u25CF  ", false, false, hp(16), p, null) + run(label, true, false, hp(25), "1F2937", null));
+        }
+        if (model.equals("center")) {
+            let top = first ? "" : "<w:pBdr><w:top w:val=\"single\" w:sz=\"6\" w:space=\"10\" w:color=\"D1D5DB\"/></w:pBdr>";
+            return cvPara(top + "<w:keepNext/><w:spacing w:before=\"" + (first ? 120 : 260) + "\" w:after=\"100\"/>",
+                    "<w:r><w:rPr><w:b/><w:color w:val=\"" + p + "\"/><w:spacing w:val=\"20\"/><w:sz w:val=\"" + hp(25) + "\"/><w:szCs w:val=\"" + hp(25) + "\"/></w:rPr><w:t xml:space=\"preserve\">"
+                            + esc(label) + "</w:t></w:r>");
+        }
+        if (model.equals("light")) {
+            return cvPara("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"" + p + "\"/><w:keepNext/><w:spacing w:before=\"" + (first ? 120 : 300) + "\" w:after=\"100\"/><w:ind w:left=\"60\"/>",
+                    run(label, true, false, hp(25), "FFFFFF", null));
+        }
+        let color = side ? "FFFFFF" : p;
+        let line = side ? "FFFFFF" : "BDBDBD";
+        return cvPara("<w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"2\" w:color=\"" + line + "\"/></w:pBdr><w:keepNext/><w:spacing w:before=\"" + (first ? 120 : 300) + "\" w:after=\"100\"/>",
+                run(label, true, false, hp(26), color, null));
+    }
+
+    function cvBullets(list, color, dot, indent) {
+        let b = new SB();
+        for (const s of list) {
+            b.append(cvPara("<w:spacing w:before=\"0\" w:after=\"30\"/><w:ind w:left=\"" + (indent + 220) + "\" w:hanging=\"220\"/>",
+                    run("\u2022", false, false, hp(19), dot, null) + "<w:r><w:tab/></w:r>" + run(s, false, false, hp(19), color, null)));
+        }
         return b.toString();
+    }
+
+    function cvEntry(e, width, indent, first, education) {
+        let b = new SB();
+        let model = doc.cv.model;
+        let ind = indent > 0 ? "<w:ind w:left=\"" + indent + "\"/>" : "";
+        if (model.equals("band")) {
+            if (!e.period.isEmpty()) b.append(cvPara("<w:keepNext/><w:spacing w:before=\"" + (first ? 80 : 200) + "\" w:after=\"0\"/>" + ind, run(e.period, false, false, hp(17), "6B7280", null)));
+            b.append(cvPara("<w:keepNext/><w:spacing w:before=\"" + (e.period.isEmpty() ? (first ? 80 : 200) : 0) + "\" w:after=\"40\"/>" + ind,
+                    run(e.title, true, false, hp(21), "1F2937", null) + (e.org.isEmpty() ? "" : run(" \u2013 " + e.org, false, false, hp(21), "6B7280", null))));
+        } else {
+            let boldPeriod = model.equals("center");
+            b.append(cvPara("<w:keepNext/><w:tabs><w:tab w:val=\"right\" w:pos=\"" + width + "\"/></w:tabs><w:spacing w:before=\"" + (first ? 80 : 200) + "\" w:after=\"0\"/>" + ind,
+                    run(e.title, true, false, hp(21), "1F2937", null) + (e.period.isEmpty() ? "" : "<w:r><w:tab/></w:r>" + run(e.period, boldPeriod, false, hp(19), boldPeriod ? "1F2937" : "6B7280", null))));
+            if (!e.org.isEmpty()) b.append(cvPara("<w:keepNext/><w:spacing w:before=\"0\" w:after=\"40\"/>" + ind, run(e.org, false, false, hp(19), "6B7280", null)));
+        }
+        if (education && !e.details.isEmpty()) b.append(cvPara("<w:spacing w:before=\"0\" w:after=\"40\"/>" + ind, run(e.details, false, false, hp(19), "6B7280", null)));
+        b.append(cvBullets(e.bullets, "1F2937", "1F2937", indent));
+        return b.toString();
+    }
+
+    /** Liste sur 3 colonnes (modèle centré). */
+    function cvGrid(list, width) {
+        let col = ~~(width / 3.0);
+        let t = new SB("<w:tbl><w:tblPr><w:tblW w:w=\"" + width + "\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/>"
+                + "<w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders><w:tblLayout w:type=\"fixed\"/>"
+                + "<w:tblCellMar><w:left w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"80\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr><w:tblGrid>");
+        for (let i = 0; i < 3; i++) t.append("<w:gridCol w:w=\"").append(col).append("\"/>");
+        t.append("</w:tblGrid>");
+        for (let i = 0; i < list.length; i += 3) {
+            t.append("<w:tr>");
+            for (let k = 0; k < 3; k++) {
+                let s = i + k < list.length ? list.get(i + k) : "";
+                t.append("<w:tc><w:tcPr><w:tcW w:w=\"").append(col).append("\" w:type=\"dxa\"/></w:tcPr>")
+                        .append(s.isEmpty() ? "<w:p/>" : cvPara("<w:spacing w:before=\"0\" w:after=\"30\"/><w:ind w:left=\"220\" w:hanging=\"220\"/>",
+                                run("\u2022", false, false, hp(19), "1F2937", null) + "<w:r><w:tab/></w:r>" + run(s, false, false, hp(19), "1F2937", null)))
+                        .append("</w:tc>");
+            }
+            t.append("</w:tr>");
+        }
+        return t.append("</w:tbl>").toString();
+    }
+
+    function cvContactsLine(color, center) {
+        let r = new SB();
+        let cv = doc.cv;
+        for (let i = 0; i < cv.contacts.length; i++) {
+            let ct = cv.contacts.get(i);
+            if (i > 0) r.append(run("     ", false, false, hp(18), color, null));
+            r.append(run(cvSymbol(ct[0]), false, false, hp(18), accent, null)).append(run(ct[1], false, false, hp(18), color, null));
+        }
+        return r.toString();
+    }
+
+    /** Colonne principale : profil, compétences (sans barre), expériences, formations, langues, intérêts, références. */
+    function cvMain(width, indent, firstStart) {
+        let b = new SB();
+        let cv = doc.cv;
+        let model = cv.model;
+        let sidebar = model.equals("dark") || model.equals("light");
+        let first = firstStart;
+        let ind = indent > 0 ? "<w:ind w:left=\"" + indent + "\"/>" : "";
+        let cw = width - indent;
+        if (!cv.profile.isEmpty()) {
+            b.append(cvTitle(cv.lProfile, false, first, width)); first = false;
+            b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(cv.profile, false, false, hp(19), "1F2937", null)));
+        }
+        if (!sidebar && !cv.skills.isEmpty()) {
+            b.append(cvTitle(cv.lSkills, false, first, width)); first = false;
+            if (model.equals("center")) b.append(cvGrid(cv.skills, cw));
+            else b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(cv.skills.join("   |   "), false, false, hp(19), "1F2937", null)));
+        }
+        if (!cv.experience.isEmpty()) {
+            b.append(cvTitle(cv.lExperience, false, first, width)); first = false;
+            for (let i = 0; i < cv.experience.length; i++) b.append(cvEntry(cv.experience.get(i), width, indent, i == 0, false));
+        }
+        if (!cv.education.isEmpty()) {
+            b.append(cvTitle(cv.lEducation, false, first, width)); first = false;
+            for (let i = 0; i < cv.education.length; i++) b.append(cvEntry(cv.education.get(i), width, indent, i == 0, true));
+        }
+        if (!sidebar) {
+            for (let k = 0; k < 2; k++) {
+                let list = k == 0 ? cv.languages : cv.interests;
+                if (list.isEmpty()) continue;
+                b.append(cvTitle(k == 0 ? cv.lLanguages : cv.lInterests, false, first, width)); first = false;
+                if (model.equals("center")) b.append(cvGrid(list, cw));
+                else b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(list.join("   |   "), false, false, hp(19), "1F2937", null)));
+            }
+        }
+        if (!cv.references.isEmpty()) {
+            b.append(cvTitle(cv.lReferences, false, first, width));
+            b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(cv.references, false, false, hp(19), "1F2937", null)));
+        }
+        return b.toString();
+    }
+
+    function cvSide(width) {
+        let b = new SB();
+        let cv = doc.cv;
+        let dark = cv.model.equals("dark");
+        let ink = dark ? "FFFFFF" : "1F2937";
+        let dot = dark ? "FFFFFF" : accent;
+        if (cv.photo != null) {
+            b.append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"0\" w:after=\"200\"/>", cvPhoto(cv.photo, 1500000, dark ? "FFFFFF" : null, dark ? 57150 : 0)));
+        }
+        let first = cv.photo == null;
+        if (!cv.contacts.isEmpty()) {
+            b.append(cvTitle(cv.lContact, true, first, width)); first = false;
+            for (const ct of cv.contacts) {
+                b.append(cvPara("<w:spacing w:before=\"0\" w:after=\"40\"/>", run(cvSymbol(ct[0]), false, false, hp(18), dark ? "FFFFFF" : accent, null) + run(ct[1], false, false, hp(18), ink, null)));
+            }
+        }
+        for (let k = 0; k < 3; k++) {
+            let list = k == 0 ? cv.skills : k == 1 ? cv.languages : cv.interests;
+            if (list.isEmpty()) continue;
+            b.append(cvTitle(k == 0 ? cv.lSkills : k == 1 ? cv.lLanguages : cv.lInterests, true, first, width)); first = false;
+            b.append(cvBullets(list, ink, dot, 0));
+        }
+        return b.toString();
+    }
+
+    function cvBody(b) {
+        let cv = doc.cv;
+        let model = cv.model;
+        let nameFont = headFont;
+        let pageW = 11906, pageH = 16838;
+        if (model.equals("dark") || model.equals("light")) {
+            let sw = ~~(pageW * 0.35), mw = pageW - sw;
+            let sideBg = model.equals("dark") ? accent : tintHex(doc.theme.primary, 0.95);
+            let sideIn = sw - 400 - 300, mainIn = mw - 440 - 560;
+            let main = new SB();
+            main.append(cvPara("<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>", run(cv.name, true, false, hp(50), "1F2937", nameFont)));
+            if (!cv.job.isEmpty()) main.append(cvPara("<w:spacing w:before=\"60\" w:after=\"120\"/>", run(cv.job, false, false, hp(27), "4B5563", null)));
+            main.append(cvMain(mainIn, 0, false));
+            b.append("<w:tbl><w:tblPr><w:tblW w:w=\"").append(pageW).append("\" w:type=\"dxa\"/>").append(doc.rtl ? "<w:bidiVisual/>" : "")
+                    .append("<w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>")
+                    .append("<w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:left w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"0\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr>")
+                    .append("<w:tblGrid><w:gridCol w:w=\"").append(sw).append("\"/><w:gridCol w:w=\"").append(mw).append("\"/></w:tblGrid>")
+                    .append("<w:tr><w:trPr><w:trHeight w:val=\"").append(pageH - 120).append("\" w:hRule=\"atLeast\"/></w:trPr>")
+                    .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(sw).append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(sideBg).append("\"/>")
+                    .append("<w:tcMar><w:top w:w=\"560\" w:type=\"dxa\"/><w:left w:w=\"400\" w:type=\"dxa\"/><w:right w:w=\"300\" w:type=\"dxa\"/></w:tcMar></w:tcPr>")
+                    .append(cvSide(sideIn)).append("</w:tc>")
+                    .append("<w:tc><w:tcPr><w:tcW w:w=\"").append(mw).append("\" w:type=\"dxa\"/>")
+                    .append("<w:tcMar><w:top w:w=\"720\" w:type=\"dxa\"/><w:left w:w=\"440\" w:type=\"dxa\"/><w:right w:w=\"560\" w:type=\"dxa\"/></w:tcMar></w:tcPr>")
+                    .append(main).append("</w:tc></w:tr></w:tbl>")
+                    .append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"20\" w:lineRule=\"exact\"/></w:pPr></w:p>");
+            b.append("<w:sectPr><w:pgSz w:w=\"").append(pageW).append("\" w:h=\"").append(pageH).append("\"/>")
+                    .append("<w:pgMar w:top=\"0\" w:right=\"0\" w:bottom=\"0\" w:left=\"0\" w:header=\"0\" w:footer=\"0\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>");
+            return;
+        }
+        let m = 851, width = pageW - 2 * m;
+        if (model.equals("band")) {
+            let bg = tintHex(doc.theme.primary, 0.94);
+            let ph = cv.photo != null;
+            let pc = ph ? 2000 : 0, tc = width - pc;
+            let text = new SB();
+            text.append(cvPara("<w:spacing w:before=\"0\" w:after=\"0\"/>", run(cv.name, true, false, hp(44), "1F2937", nameFont)));
+            if (!cv.job.isEmpty()) text.append(cvPara("<w:spacing w:before=\"40\" w:after=\"80\"/>", run(cv.job, false, false, hp(24), "4B5563", null)));
+            if (!cv.contacts.isEmpty()) text.append(cvPara("<w:pBdr><w:top w:val=\"single\" w:sz=\"6\" w:space=\"6\" w:color=\"" + accent + "\"/></w:pBdr><w:spacing w:before=\"60\" w:after=\"0\"/>", cvContactsLine("1F2937", false)));
+            b.append("<w:tbl><w:tblPr><w:tblW w:w=\"").append(width).append("\" w:type=\"dxa\"/>").append(doc.rtl ? "<w:bidiVisual/>" : "")
+                    .append("<w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>")
+                    .append("<w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"360\" w:type=\"dxa\"/><w:left w:w=\"240\" w:type=\"dxa\"/><w:bottom w:w=\"360\" w:type=\"dxa\"/><w:right w:w=\"240\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr><w:tblGrid>");
+            if (ph) b.append("<w:gridCol w:w=\"").append(pc).append("\"/>");
+            b.append("<w:gridCol w:w=\"").append(tc).append("\"/></w:tblGrid><w:tr>");
+            if (ph) {
+                b.append("<w:tc><w:tcPr><w:tcW w:w=\"").append(pc).append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(bg).append("\"/><w:vAlign w:val=\"center\"/></w:tcPr>")
+                        .append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"0\" w:after=\"0\"/>", cvPhoto(cv.photo, 1150000, accent, 19050))).append("</w:tc>");
+            }
+            b.append("<w:tc><w:tcPr><w:tcW w:w=\"").append(tc).append("\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"").append(bg).append("\"/><w:vAlign w:val=\"center\"/></w:tcPr>")
+                    .append(text).append("</w:tc></w:tr></w:tbl>");
+            b.append(cvMain(width, 284, true));
+        } else {
+            if (cv.photo != null) b.append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"0\" w:after=\"120\"/>", cvPhoto(cv.photo, 1060000, null, 0)));
+            b.append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"0\" w:after=\"0\"/>", run(cv.name, true, false, hp(52), "1F2937", nameFont)));
+            if (!cv.job.isEmpty()) b.append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"40\" w:after=\"80\"/>", run(cv.job, false, false, hp(27), "4B5563", null)));
+            if (!cv.contacts.isEmpty()) b.append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"60\" w:after=\"0\"/>", cvContactsLine("374151", true)));
+            b.append(cvPara("<w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"D1D5DB\"/></w:pBdr><w:spacing w:before=\"0\" w:after=\"120\"/>", ""));
+            b.append(cvMain(width, 0, true));
+        }
+        b.append("<w:sectPr><w:pgSz w:w=\"").append(pageW).append("\" w:h=\"").append(pageH).append("\"/>")
+                .append("<w:pgMar w:top=\"").append(model.equals("band") ? 567 : 851).append("\" w:right=\"").append(m).append("\" w:bottom=\"851\" w:left=\"").append(m)
+                .append("\" w:header=\"0\" w:footer=\"0\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>");
     }
 
     /** Le corps du mémoire a commencé (fin des pages préliminaires). */

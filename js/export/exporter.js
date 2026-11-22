@@ -4,7 +4,7 @@ import { writeDocx } from "../docx.js";
 import { writePptx } from "../pptx.js";
 import { buildFrom, chartSpec } from "../forms/catalog.js";
 import { Form } from "../forms/model.js";
-import { themeOf, font as fontSpec } from "../forms/themes.js";
+import { themeFor, font as fontSpec, parseColor, tint } from "../forms/themes.js";
 import { renderChart } from "./chart.js";
 import { renderDoc, toPdf } from "./pdf.js";
 import { ensureFont, fontBytes, assetBytes, assetText } from "./fonts.js";
@@ -43,13 +43,16 @@ export function fileName(type, data, lang, format) {
 }
 
 /** Thème complet (couleurs, styles, polices intégrables, fonds). */
-async function theme(data, lang, forWord) {
-    const spec = themeOf(data);
+async function theme(type, data, lang, forWord) {
+    const spec = themeFor(type, data);
     const t = new DocTheme();
     Object.assign(t, {
         id: spec.id, primary: spec.primary, light: spec.light, accent: spec.accent, heading: spec.heading, pageNum: spec.pageNum,
         bullet: spec.bullet, runningHeader: spec.runningHeader, darkSlide: spec.darkSlide,
     });
+    // Couleur choisie par-dessus le thème : titres, bandeaux, tableaux, filets
+    const chosen = parseColor(data.color);
+    if (chosen != null) { t.primary = chosen; t.light = tint(chosen, 0.93); t.accent = tint(chosen, 0.4); }
     const head = fontSpec(data.font || spec.headFont), body = fontSpec(data.font || spec.bodyFont);
     t.headFontId = head.id; t.bodyFontId = body.id; t.headFont = head.officeName; t.bodyFont = body.officeName;
     if (forWord) {
@@ -65,15 +68,32 @@ async function theme(data, lang, forWord) {
     return t;
 }
 
+/** Photo de CV recadrée en carré (affichée ronde). */
+async function squarePhoto(bytes) {
+    const bmp = await createImageBitmap(new Blob([bytes]));
+    const side = Math.min(bmp.width, bmp.height), out = Math.min(600, side);
+    const cv = document.createElement("canvas");
+    cv.width = out; cv.height = out;
+    cv.getContext("2d").drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, out, out);
+    const blob = await new Promise((res) => cv.toBlob(res, "image/jpeg", 0.88));
+    return new Img(new Uint8Array(await blob.arrayBuffer()), out, out, "jpeg");
+}
+
 /** Construit le document complet, images comprises. */
 export async function buildDoc(type, data, lang, forWord = false) {
     const doc = buildFrom(type, data, ctxFor(lang));
     expand(doc, data.values || {});
     doc.rtl = lang === "ar";
     doc.style = data.style || "MODERN";
-    doc.theme = await theme(data, lang, forWord);
+    doc.theme = await theme(type, data, lang, forWord);
+    doc.fontScale = Math.max(80, Math.min(130, data.scale || 100)) / 100;
     const images = new Map();
     for (const ref of imageRefs(data)) { const b = await Images.bytes(ref); if (b) images.set(ref, b); }
+    if (doc.cv) {
+        doc.cv.model = themeFor(type, data).id.replace("cv_", "");
+        const ph = doc.cv.photoRef ? images.get(doc.cv.photoRef) : null;
+        if (ph) doc.cv.photo = await squarePhoto(ph.data).catch(() => null);
+    }
     applyFigures(doc, data, lang, images);
     return doc;
 }

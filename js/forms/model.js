@@ -62,7 +62,8 @@ export function blank(type, lang) {
     for (const g of type.groups || []) groups[g.id] = Array.from({ length: g.startItems }, () => ({}));
     if ((type.defaultCoverModel || 0) > 0) values.cv_model = String(type.defaultCoverModel);
     // Présentations : un design illustré par défaut (image de diapositive)
-    return { values, groups, style: "MODERN", cover: !!type.defaultCover, theme: type.module === "SLIDES" ? "corporate" : "", font: "" };
+    const theme = type.module === "SLIDES" ? "corporate" : type.id === "cv" ? "cv_band" : "";
+    return { values, groups, style: "MODERN", cover: !!type.defaultCover, theme, font: "", color: "", scale: 100 };
 }
 
 /** Accès pratique aux valeurs pendant la construction. */
@@ -74,6 +75,8 @@ export class Form {
         this.cover = !!data.cover;
         this.theme = data.theme || "";
         this.font = data.font || "";
+        this.color = data.color || "";
+        this.scale = data.scale || 100;
     }
     v(id) { return String(this.values[id] || "").trim(); }
     items(groupId) { return (this.groups[groupId] || []).filter((it) => Object.values(it).some((x) => String(x || "").trim())); }

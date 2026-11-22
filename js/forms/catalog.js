@@ -1,7 +1,7 @@
 // Tous les types de documents proposés par FAFIO (copie de Catalog.kt).
-import { Block, Slide, lines } from "../doc.js";
+import { Block, Slide, lines, Cv, CvItem } from "../doc.js";
 import { t, F, G, TODAY, YEAR, Form, B, imgKey, capKey, hasImg, number, formatNumber, academicYear } from "./model.js";
-import { themeOf } from "./themes.js";
+import { themeOf, parseColor } from "./themes.js";
 import { membersGroup, members, memberNames, applyMembers, measureTable } from "./science.js";
 
 // ------------------------------------------------------------ Libellés communs
@@ -143,7 +143,7 @@ export function chartSpec(f) {
         pts.push([String(p.x || "").trim(), y]);
     }
     const type = ["LINE", "BAR", "PIE", "REG"][f.choice("type")] || "LINE";
-    return { type, title: f.v("title"), xLabel: f.v("x_label"), yLabel: f.v("y_label"), points: pts, accent: themeOf(f).primary };
+    return { type, title: f.v("title"), xLabel: f.v("x_label"), yLabel: f.v("y_label"), points: pts, accent: parseColor(f.color) ?? themeOf(f).primary };
 }
 
 const ALL = ["PDF", "DOCX"];
@@ -472,6 +472,8 @@ const CV = {
     fields: [
         F("name", t("Nom complet", "Full name", "الاسم الكامل"), { required: true }),
         F("job", t("Poste recherché / titre", "Job title", "المنصب / الصفة")),
+        F("photo", t("Photo (facultative)", "Photo (optional)", "صورة (اختيارية)"), { type: "IMAGE",
+            hint: t("Sans photo, le CV s'ajuste tout seul.", "Without a photo, the CV adjusts itself.", "بدون صورة، تتكيف السيرة تلقائيًا.") }),
         F("phone", t("Téléphone", "Phone", "الهاتف"), { type: "PHONE" }),
         F("email", t("E-mail", "Email", "البريد الإلكتروني"), { type: "EMAIL" }),
         F("address", t("Adresse / ville", "Address / city", "العنوان / المدينة")),
@@ -522,6 +524,33 @@ const CV = {
         d.rubric(f.values, "languages", t("Langues", "Languages", "اللغات").get(l), "BULLETS");
         d.rubric(f.values, "interests", t("Centres d'intérêt", "Interests", "الاهتمامات").get(l), "BULLETS");
         d.rubric(f.values, "references", t("Références", "References", "المراجع").get(l));
+        // Données structurées : le CV est dessiné selon le modèle choisi (bandeau, centré, barres latérales)
+        const cv = new Cv();
+        cv.name = f.v("name"); cv.job = f.v("job"); cv.photoRef = f.v("photo");
+        for (const [k, v] of [["loc", f.v("address")], ["mail", f.v("email")], ["phone", f.v("phone")]]) if (v) cv.contacts.push([k, v]);
+        cv.profile = f.v("profile"); cv.references = f.v("references");
+        for (const e of exp) {
+            const it = new CvItem();
+            it.title = String(e.role || "").trim(); it.org = String(e.company || "").trim(); it.period = String(e.period || "").trim();
+            it.bullets.push(...lines(e.desc || ""));
+            cv.experience.push(it);
+        }
+        for (const e of edu) {
+            const it = new CvItem();
+            it.title = String(e.degree || "").trim(); it.org = String(e.school || "").trim(); it.period = String(e.period || "").trim();
+            it.details = String(e.details || "").trim();
+            cv.education.push(it);
+        }
+        cv.skills.push(...lines(f.v("skills"))); cv.languages.push(...lines(f.v("languages"))); cv.interests.push(...lines(f.v("interests")));
+        cv.lContact = t("Coordonnées", "Contact", "معلومات الاتصال").get(l);
+        cv.lProfile = t("Profil", "Profile", "الملف الشخصي").get(l);
+        cv.lSkills = t("Compétences", "Skills", "المهارات").get(l);
+        cv.lExperience = t("Expérience professionnelle", "Work experience", "الخبرات المهنية").get(l);
+        cv.lEducation = t("Formation", "Education", "التكوين").get(l);
+        cv.lLanguages = t("Langues", "Languages", "اللغات").get(l);
+        cv.lInterests = t("Centres d'intérêt", "Interests", "الاهتمامات").get(l);
+        cv.lReferences = t("Références", "References", "المراجع").get(l);
+        d.cv = cv;
         return d;
     },
 };

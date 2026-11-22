@@ -1,7 +1,9 @@
 import re, subprocess, sys
 J='/home/claude/fafio-android/app/src/main/java/com/axolut/fafio/doc/DocxWriter.java'
 s=subprocess.run(['python3','tools/j2js.py',J],capture_output=True,text=True,check=True).stdout
-s=s.replace('class DocxWriter {','import { Zip, SB, esc, XML_HEAD } from "./util.js";\nimport { Block, lines as docLines } from "./doc.js";\nimport * as MathTex from "./math.js";\n\n/** Génère un vrai fichier Word (.docx) modifiable. Renvoie un Uint8Array. */\nexport function writeDocx(doc) {',1)
+s=re.sub(r'String\.join\(("[^"]*"), ([\w.]+)\)', r'\2.join(\1)', s)
+s=s.replace('Doc.hex(','hex(')
+s=s.replace('class DocxWriter {','import { Zip, SB, esc, XML_HEAD, hex } from "./util.js";\nimport { Block, lines as docLines } from "./doc.js";\nimport * as MathTex from "./math.js";\n\n/** Génère un vrai fichier Word (.docx) modifiable. Renvoie un Uint8Array. */\nexport function writeDocx(doc) {',1)
 s=re.sub(r'    DocxWriter\(Doc doc\) \{\n(.*?)\n    \}\n', lambda m: m.group(1).replace('this.','')+'\n', s, flags=re.S)
 s=re.sub(r'    function write\(doc, out\) \{\n.*?\n    \}\n','',s,flags=re.S)
 s=s.replace('let doc ;\n','').replace('doc = doc;\n','')

@@ -45,7 +45,41 @@ export const THEMES = [
     { id: "elegant", name: t("Élégant sobre", "Plain elegant", "أنيق بسيط"), hasCover: false, hasSlide: false, primary: 0xFF0F766E, light: 0xFFEFF7F6, accent: 0xFF14B8A6, heading: "LEFTBAR", pageNum: "DASH", bullet: "•", headFont: "playfair", bodyFont: "lato", runningHeader: false, darkSlide: false },
 ];
 
-export const theme = (id) => THEMES.find((x) => x.id === id) || THEMES[0];
+/** Modèles de CV : mise en page propre, sans illustration de fond ; seule la couleur change. */
+export const CV_THEMES = [
+    { id: "cv_band", name: t("Bandeau", "Header band", "شريط علوي"), hasCover: false, hasSlide: false, primary: 0xFF2B6CB0, light: 0xFFF3F7FC, accent: 0xFF90B4DE, heading: "UNDERLINE", pageNum: "SIMPLE", bullet: "•", headFont: "opensans", bodyFont: "opensans", runningHeader: false, darkSlide: false },
+    { id: "cv_center", name: t("Classique centré", "Centred classic", "كلاسيكي في الوسط"), hasCover: false, hasSlide: false, primary: 0xFF111827, light: 0xFFF3F4F6, accent: 0xFF9CA3AF, heading: "CLASSIC", pageNum: "SIMPLE", bullet: "•", headFont: "montserrat", bodyFont: "opensans", runningHeader: false, darkSlide: false },
+    { id: "cv_dark", name: t("Barre latérale foncée", "Dark sidebar", "شريط جانبي داكن"), hasCover: false, hasSlide: false, primary: 0xFF2D3748, light: 0xFFF1F3F6, accent: 0xFF718096, heading: "UNDERLINE", pageNum: "SIMPLE", bullet: "•", headFont: "lato", bodyFont: "lato", runningHeader: false, darkSlide: false },
+    { id: "cv_light", name: t("Barre latérale claire", "Light sidebar", "شريط جانبي فاتح"), hasCover: false, hasSlide: false, primary: 0xFF1A73E8, light: 0xFFF5F6F8, accent: 0xFF8AB4F8, heading: "BAND", pageNum: "SIMPLE", bullet: "•", headFont: "lato", bodyFont: "lato", runningHeader: false, darkSlide: false },
+];
+
+export const theme = (id) => THEMES.find((x) => x.id === id) || CV_THEMES.find((x) => x.id === id) || THEMES[0];
 
 /** Thème d'un formulaire (les anciens brouillons n'avaient qu'un « style »). */
 export const themeOf = (data) => theme(data.theme || (data.style || "MODERN").toLowerCase());
+
+/** Thèmes proposés pour ce type de document. */
+export const themesFor = (type) => (type.id === "cv" ? CV_THEMES : type.module === "SLIDES" ? THEMES.filter((t) => t.hasSlide) : THEMES);
+
+/** Thème d'un document de ce type (un CV a toujours un modèle de CV). */
+export function themeFor(type, data) {
+    const spec = themeOf(data);
+    const isCv = CV_THEMES.includes(spec);
+    if (type.id === "cv" && !isCv) return CV_THEMES[0];
+    if (type.id !== "cv" && isCv) return THEMES[0];
+    return spec;
+}
+
+/** Palette de couleurs proposée par-dessus chaque thème. */
+export const PALETTE = ["1E5AA8", "0288D1", "00897B", "2E7D32", "827717", "EF6C00", "C62828", "8E2430", "AD1457", "6A1B9A", "4F46E5", "334155", "111827"];
+
+export const parseColor = (hex) => (/^[0-9A-Fa-f]{6}$/.test(hex || "") ? 0xFF000000 + parseInt(hex, 16) : null);
+
+/** Mélange avec du blanc : t = 0 couleur pure, t = 1 blanc (même calcul que Palette.tint en Kotlin). */
+export function tint(c, t) {
+    const ch = (v) => Math.max(0, Math.min(255, Math.trunc(v + (255 - v) * t)));
+    return 0xFF000000 + ch((c >>> 16) & 0xFF) * 65536 + ch((c >>> 8) & 0xFF) * 256 + ch(c & 0xFF);
+}
+
+/** Couleur principale effective (couleur choisie ou celle du thème). */
+export const primaryOf = (type, data) => parseColor(data.color) ?? themeFor(type, data).primary;

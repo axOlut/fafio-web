@@ -81,7 +81,7 @@ export function layout(ctx, text, p, width, align = "LEFT", rtl = false) {
     const runs = typeof text === "string" ? [{ text }] : text;
     const paras = [[]];
     for (const r of runs) {
-        const rp = { ...p, bold: r.bold !== undefined ? r.bold : p.bold, underline: r.underline !== undefined ? r.underline : p.underline };
+        const rp = { ...p, bold: r.bold !== undefined ? r.bold : p.bold, underline: r.underline !== undefined ? r.underline : p.underline, color: r.color || p.color };
         const parts = String(r.text).split("\n");
         parts.forEach((part, i) => {
             if (i > 0) paras.push([]);
@@ -202,6 +202,7 @@ export async function preloadImages(doc) {
     for (const s of doc.slides) add(s.png, s.imgType);
     if (doc.logoLeft) add(doc.logoLeft.data, doc.logoLeft.type);
     if (doc.logoRight) add(doc.logoRight.data, doc.logoRight.type);
+    if (doc.cv && doc.cv.photo) add(doc.cv.photo.data, "jpeg");
     if (doc.theme.coverBg) add(doc.theme.coverBg.data, "jpeg");
     if (doc.theme.slideBg) add(doc.theme.slideBg.data, "jpeg");
     await Promise.all(list.map(async ([data, type]) => {

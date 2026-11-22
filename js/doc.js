@@ -77,6 +77,21 @@ export class Block {
     setAlign(a) { this.align = a; return this; }
 }
 
+/** Expérience ou formation d'un CV. */
+export class CvItem {
+    constructor() { this.title = ""; this.org = ""; this.period = ""; this.details = ""; this.bullets = []; }
+}
+
+/** Contenu d'un CV (modèles : band, center, dark, light). */
+export class Cv {
+    constructor() {
+        this.model = "band"; this.name = ""; this.job = ""; this.contacts = []; this.photoRef = ""; this.photo = null;
+        this.profile = ""; this.references = ""; this.experience = []; this.education = []; this.skills = []; this.languages = []; this.interests = [];
+        this.lContact = "Coordonnées"; this.lProfile = "Profil"; this.lSkills = "Compétences"; this.lExperience = "Expérience professionnelle";
+        this.lEducation = "Formation"; this.lLanguages = "Langues"; this.lInterests = "Centres d'intérêt"; this.lReferences = "Références";
+    }
+}
+
 export class Slide {
     constructor(title, bullets) {
         this.title = safe(title); this.bullets = clean(bullets); this.png = null; this.pxW = 0; this.pxH = 0;
@@ -106,6 +121,7 @@ export class Doc {
         this.gradeBoxes = false; this.gradeLabel = "NOTE FINALE"; this.observationLabel = "OBSERVATION"; this.yearLabel = "Année académique";
         this.pageBorder = false; this.breakBeforeH1 = false;
         this.romanPrelim = false; this.chapters = false; this.chapterWord = "CHAPITRE";
+        this.fontScale = 1; this.cv = null;
         this.toc = false; this.tocTitle = "PLAN DE TRAVAIL"; this.numberHeadings = false; this.pageWordFooter = false;
         this.style = "MODERN"; this.theme = new DocTheme(); this.rtl = false; this.landscape = false;
         this.blocks = []; this.slides = [];

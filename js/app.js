@@ -4,6 +4,7 @@ import { icon } from "./ui/icons.js";
 import STR from "./i18n.js";
 import { TYPES, MODULES, typeById, forModule, allowsImage, CHART_TYPES } from "./forms/catalog.js";
 import { richTools } from "./ui/rich.js";
+import { themeRow, colorRow, sizeRow } from "./ui/style.js";
 import * as Pro from "./data/pro.js";
 import { blank, isVisible, imgKey, capKey, Form } from "./forms/model.js";
 import { example } from "./forms/examples.js";
@@ -384,21 +385,22 @@ async function formScreen(id) {
 
     // --- thème et police
     function themePicker() {
-        const cur = themeOf(data).id;
-        const slides = type.module === "SLIDES";
-        const list = slides ? THEMES.filter((t) => t.hasSlide) : THEMES;
-        const row = h("div", { class: "themes" + (slides ? " wide" : "") }, list.map((t) => {
-            const th = h("div", { class: "th" });
-            if (t.hasCover || t.hasSlide) th.appendChild(h("img", { src: `assets/themes/${t.id}_${slides ? "sthumb" : "thumb"}.jpg`, alt: "", loading: "lazy" }));
-            else th.appendChild(h("div", { class: "plain" }, h("i"), h("i"), h("i"), h("i", { style: { width: "70%" } }), h("i")));
-            th.appendChild(h("div", { class: "dots" }, h("b", { style: { background: css(t.primary) } }), h("b", { style: { background: css(t.accent) } })));
-            if (t.id === cur) th.appendChild(h("div", { class: "check" }, "✓"));
-            return h("button", { type: "button", class: "theme" + (t.id === cur ? " on" : ""), style: { "--tc": css(t.primary) },
-                onClick: () => { data.theme = t.id; changed(); rerender(); } }, th, h("div", { class: "nm" }, tr(t.name)));
-        }));
-        requestAnimationFrame(() => { const on = row.querySelector(".theme.on"); if (on) row.scrollLeft = on.offsetLeft - 16; });
-        return h("div", {}, h("div", { class: "title-m" }, s(slides ? "slide_theme_title" : "theme_title")),
-            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s(slides ? "slide_theme_sub" : "theme_sub")), row);
+        const slides = type.module === "SLIDES", cv = type.id === "cv";
+        const row = themeRow(type, data, (id) => { data.theme = id; changed(); rerender(); });
+        return h("div", {}, h("div", { class: "title-m" }, s(cv ? "cv_model_title" : slides ? "slide_theme_title" : "theme_title")),
+            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s(cv ? "cv_model_sub" : slides ? "slide_theme_sub" : "theme_sub")), row);
+    }
+
+    function colorPicker() {
+        return h("div", {}, h("div", { class: "title-m", style: { marginTop: "14px" } }, s("color_title")),
+            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("color_sub")),
+            colorRow(type, data, s("color_auto"), (hex) => { data.color = hex; changed(); rerender(); }));
+    }
+
+    function sizePicker() {
+        return h("div", {}, h("div", { class: "title-m", style: { marginTop: "14px" } }, s("size_title")),
+            h("div", { class: "small muted" }, s("size_sub")),
+            sizeRow(data, null, (v) => { data.scale = v; changed(); }));
     }
 
     function fontPicker() {
@@ -448,7 +450,7 @@ async function formScreen(id) {
 
     function content() {
         const nodes = [];
-        const style = h("div", { class: "card" }, themePicker(), fontPicker());
+        const style = h("div", { class: "card" }, themePicker(), colorPicker(), sizePicker(), fontPicker());
         if (type.supportsCover) {
             const sw = h("input", { type: "checkbox" });
             sw.checked = !!data.cover;
@@ -513,6 +515,23 @@ async function previewScreen(id) {
     const drawChips = () => chips.replaceChildren(...type.formats.map((f) => h("button", { class: "chip" + (f === format ? " on" : ""), onClick: () => { format = f; drawChips(); } },
         label[f] + (locked(f) ? " · " + s("pro_badge") : ""))));
     drawChips();
+    // Réglages du style dans l'aperçu : un onglet ouvre sa rangée, le toucher à nouveau la referme
+    let tab = -1, renderTimer = null, renderSeq = 0;
+    const styleBox = h("div", { class: "style-box" });
+    const tabs = h("div", { class: "chips style-tabs" });
+    const restyle = () => {
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(async () => { await Drafts.save(draft); render(); }, 250);
+    };
+    const drawStyle = () => {
+        tabs.replaceChildren(...["tab_theme", "tab_color", "tab_size"].map((k, i) => h("button", { class: "chip" + (tab === i ? " on" : ""),
+            onClick: () => { tab = tab === i ? -1 : i; drawStyle(); } }, s(k))));
+        if (tab === 0) styleBox.replaceChildren(themeRow(type, draft.data, (id) => { draft.data.theme = id; drawStyle(); restyle(); }));
+        else if (tab === 1) styleBox.replaceChildren(colorRow(type, draft.data, s("color_auto"), (hex) => { draft.data.color = hex; drawStyle(); restyle(); }));
+        else if (tab === 2) styleBox.replaceChildren(sizeRow(draft.data, null, (v) => { draft.data.scale = v; restyle(); }));
+        else styleBox.replaceChildren();
+    };
+    drawStyle();
     let busy = false;
     /** Document Pro : utiliser un crédit (ou en acheter). Renvoie true si l'export peut continuer. */
     const gate = () => (!locked(format) ? Promise.resolve(true) : proDialog(id).then((ok) => { drawChips(); return ok; }));
@@ -549,19 +568,27 @@ async function previewScreen(id) {
     mount(h("div", { class: "screen preview-screen" }, topbar(s("preview"), () => go("form/" + id)),
         h("div", { class: "scroll" }, pagesBox),
         h("div", { class: "export" }, h("div", { class: "inner" },
-            h("div", { class: "title-m" }, s("download_as")), chips,
+            tabs, styleBox,
+            h("div", { class: "title-m", style: { fontSize: "15px", marginTop: "10px" } }, s("download_as")), chips,
             h("div", { class: "row" },
                 h("button", { class: "btn", onClick: save }, icon("download"), s("save_to_phone")),
                 h("button", { class: "btn soft", onClick: share }, icon("share"), s("share")))))));
-    try {
-        const r = await preview(type, draft.data, lang);
-        const n = r.pages.length;
-        pagesBox.replaceChildren(...r.pages.flatMap((cv, i) => [cv, h("div", { class: "pageno" }, s("page_n", i + 1, n))]),
-            h("div", { class: "muted small" }, s("end_of_document")));
-    } catch (e) {
-        console.error(e);
-        pagesBox.replaceChildren(h("div", { class: "muted" }, s("export_error")));
+    async function render() {
+        const seq = ++renderSeq;
+        pagesBox.classList.add("updating");
+        try {
+            const r = await preview(type, draft.data, lang);
+            if (seq !== renderSeq) return;
+            const n = r.pages.length;
+            pagesBox.replaceChildren(...r.pages.flatMap((cv, i) => [cv, h("div", { class: "pageno" }, s("page_n", i + 1, n))]),
+                h("div", { class: "muted small" }, s("end_of_document")));
+        } catch (e) {
+            console.error(e);
+            if (seq === renderSeq) pagesBox.replaceChildren(h("div", { class: "muted" }, s("export_error")));
+        }
+        if (seq === renderSeq) pagesBox.classList.remove("updating");
     }
+    await render();
 }
 
 // ---------------------------------------------------------------- Gratuit / Pro
