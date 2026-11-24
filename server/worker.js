@@ -136,7 +136,7 @@ async function ai(env, body, req) {
     const used = parseInt((await env.FAFIO.get(key)) || "0", 10);
     if (used >= AI_PER_DAY) return fail(`limite de ${AI_PER_DAY} demandes par jour atteinte, reviens demain`, 429);
     await env.FAFIO.put(key, String(used + 1), { expirationTtl: 60 * 60 * 48 });
-    const model = env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+    const model = env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
