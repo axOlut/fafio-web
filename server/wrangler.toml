@@ -6,3 +6,6 @@ compatibility_date = "2025-06-01"
 [[kv_namespaces]]
 binding = "FAFIO"
 id = "À_REMPLACER_PAR_L_ID_DE_TON_ESPACE_KV"
+
+[ai]
+binding = "AI"

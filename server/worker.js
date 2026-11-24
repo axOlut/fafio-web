@@ -1,4 +1,5 @@
-// Serveur FAFIO (Cloudflare Workers, offre gratuite) : codes de recharge, paiement Mobile Money (Fapshi), assistant IA (Gemini).
+// Serveur FAFIO (Cloudflare Workers, offre gratuite) : codes de recharge, paiement Mobile Money (Fapshi), assistant IA.
+// IA : Workers AI de Cloudflare (liaison « AI », sans clé) ou, si un secret GEMINI_KEY est ajouté, Gemini.
 // Aucun secret dans ce fichier : les clés sont des « secrets » du Worker (GEMINI_KEY, FAPSHI_USER, FAPSHI_KEY, ADMIN_TOKEN).
 // Stockage : un espace KV lié sous le nom FAFIO.
 
@@ -112,7 +113,7 @@ async function payStatus(env, url) {
     return json({ status: tx.status, code: tx.code || null, credits: tx.credits });
 }
 
-// ---------------------------------------------------------------- Assistant de rédaction (Gemini)
+// ---------------------------------------------------------------- Assistant de rédaction (Workers AI ou Gemini)
 
 const RULES = "Réponds uniquement avec le texte demandé, sans introduction ni commentaire. Garde la langue du texte (sauf traduction). "
     + "Garde intactes les formules entre $…$ ou $$…$$, les lignes qui commencent par # (titres) ou - (puces) et les repères [[…]]. "
@@ -130,18 +131,29 @@ async function ai(env, body, req) {
     const text = String(body.text || "").slice(0, MAX_TEXT).trim();
     if (!task) return fail("tâche inconnue");
     if (!text) return fail("texte vide");
-    if (!env.GEMINI_KEY) return fail("assistant pas encore activé", 503);
+    if (!env.GEMINI_KEY && !env.AI) return fail("assistant pas encore activé", 503);
     const who = String(body.device || req.headers.get("CF-Connecting-IP") || "anon").slice(0, 40);
     const key = `ai:${who}:${today()}`;
     const used = parseInt((await env.FAFIO.get(key)) || "0", 10);
     if (used >= AI_PER_DAY) return fail(`limite de ${AI_PER_DAY} demandes par jour atteinte, reviens demain`, 429);
     await env.FAFIO.put(key, String(used + 1), { expirationTtl: 60 * 60 * 48 });
+    const system = task + " " + RULES;
+    if (!env.GEMINI_KEY) {
+        // IA intégrée de Cloudflare : incluse dans l'offre gratuite (10 000 « neurones » par jour), aucune clé à gérer
+        const res = await env.AI.run(env.AI_MODEL || "@cf/mistralai/mistral-small-3.1-24b-instruct", {
+            messages: [{ role: "system", content: system }, { role: "user", content: text }],
+            max_tokens: 2048, temperature: 0.4,
+        });
+        const out = String((res && res.response) || "").trim();
+        if (!out) return fail("aucune réponse", 502);
+        return json({ text: out, left: AI_PER_DAY - used - 1 });
+    }
     const model = env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
         body: JSON.stringify({
-            systemInstruction: { parts: [{ text: task + " " + RULES }] },
+            systemInstruction: { parts: [{ text: system }] },
             contents: [{ role: "user", parts: [{ text }] }],
             generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
         }),
@@ -160,7 +172,7 @@ export default {
         const url = new URL(req.url);
         if (req.method === "OPTIONS") return json({});
         try {
-            if (url.pathname === "/api/health") return json({ ok: true, ai: !!env.GEMINI_KEY, pay: !!(env.FAPSHI_USER && env.FAPSHI_KEY), packs: PACKS });
+            if (url.pathname === "/api/health") return json({ ok: true, ai: !!(env.GEMINI_KEY || env.AI), pay: !!(env.FAPSHI_USER && env.FAPSHI_KEY), packs: PACKS });
             if (url.pathname === "/api/pay/status" && req.method === "GET") return await payStatus(env, url);
             if (req.method !== "POST") return fail("introuvable", 404);
             const body = await req.json().catch(() => ({}));
