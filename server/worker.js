@@ -126,17 +126,24 @@ const TASKS = {
     translate: "Traduis ce texte en anglais académique (par exemple pour un abstract).",
 };
 
+/** Quota partagé par toutes les demandes d'IA : AI_PER_DAY par appareil et par jour. Renvoie le nombre déjà utilisé, ou null si dépassé. */
+async function takeQuota(env, body, req) {
+    const who = String(body.device || req.headers.get("CF-Connecting-IP") || "anon").slice(0, 40);
+    const key = `ai:${who}:${today()}`;
+    const used = parseInt((await env.FAFIO.get(key)) || "0", 10);
+    if (used >= AI_PER_DAY) return null;
+    await env.FAFIO.put(key, String(used + 1), { expirationTtl: 60 * 60 * 48 });
+    return used;
+}
+
 async function ai(env, body, req) {
     const task = TASKS[body.task];
     const text = String(body.text || "").slice(0, MAX_TEXT).trim();
     if (!task) return fail("tâche inconnue");
     if (!text) return fail("texte vide");
     if (!env.GEMINI_KEY && !env.AI) return fail("assistant pas encore activé", 503);
-    const who = String(body.device || req.headers.get("CF-Connecting-IP") || "anon").slice(0, 40);
-    const key = `ai:${who}:${today()}`;
-    const used = parseInt((await env.FAFIO.get(key)) || "0", 10);
-    if (used >= AI_PER_DAY) return fail(`limite de ${AI_PER_DAY} demandes par jour atteinte, reviens demain`, 429);
-    await env.FAFIO.put(key, String(used + 1), { expirationTtl: 60 * 60 * 48 });
+    const used = await takeQuota(env, body, req);
+    if (used === null) return fail(`limite de ${AI_PER_DAY} demandes par jour atteinte, reviens demain`, 429);
     const system = task + " " + RULES;
     if (!env.GEMINI_KEY) {
         // IA intégrée de Cloudflare : incluse dans l'offre gratuite (10 000 « neurones » par jour), aucune clé à gérer
@@ -148,21 +155,130 @@ async function ai(env, body, req) {
         if (!out) return fail("aucune réponse", 502);
         return json({ text: out, left: AI_PER_DAY - used - 1 });
     }
+    const out = await gemini(env, system, [{ text }], false);
+    if (!out) return fail("aucune réponse", 502);
+    return json({ text: out, left: AI_PER_DAY - used - 1 });
+}
+
+async function gemini(env, system, parts, asJson) {
     const model = env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
         body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
-            contents: [{ role: "user", parts: [{ text }] }],
-            generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+            contents: [{ role: "user", parts }],
+            generationConfig: { temperature: asJson ? 0.1 : 0.4, maxOutputTokens: 4096, ...(asJson ? { responseMimeType: "application/json" } : {}) },
         }),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) return fail((data.error && data.error.message) || "IA indisponible", 502);
-    const out = ((data.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
-    if (!out) return fail("aucune réponse", 502);
-    return json({ text: out, left: AI_PER_DAY - used - 1 });
+    if (!r.ok) throw new Error((data.error && data.error.message) || "IA indisponible");
+    return ((data.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+}
+
+// ---------------------------------------------------------------- Remplissage automatique d'un formulaire
+
+const FILL_FILES = 4;
+const LANG_NAME = { fr: "français", en: "anglais", ar: "arabe" };
+
+function bytesOf(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
+
+/** Extrait l'objet JSON d'une réponse de modèle (avec ou sans ``` autour). */
+function parseJsonReply(out) {
+    if (out && typeof out === "object") return out;
+    const txt = String(out || "");
+    const a = txt.indexOf("{"), b = txt.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    try { return JSON.parse(txt.slice(a, b + 1)); } catch (e) { return null; }
+}
+
+/** Ne garde que les champs du formulaire, en texte. */
+function cleanFill(raw, schema) {
+    const str = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter((x) => x).join("\n") : v == null ? "" : typeof v === "object" ? "" : String(v).trim());
+    const values = {}, groups = {};
+    const fieldIds = new Set((schema.fields || []).map((f) => f.id));
+    for (const [k, v] of Object.entries((raw && raw.values) || {})) if (fieldIds.has(k) && str(v)) values[k] = str(v);
+    for (const g of schema.groups || []) {
+        const ids = new Set((g.fields || []).map((f) => f.id));
+        const list = ((raw && raw.groups) || {})[g.id];
+        if (!Array.isArray(list)) continue;
+        const items = [];
+        for (const it of list.slice(0, 30)) {
+            if (!it || typeof it !== "object") continue;
+            const o = {};
+            for (const [k, v] of Object.entries(it)) if (ids.has(k) && str(v)) o[k] = str(v);
+            if (Object.keys(o).length) items.push(o);
+        }
+        if (items.length) groups[g.id] = items;
+    }
+    return { values, groups };
+}
+
+async function fill(env, body, req) {
+    const schema = body.schema;
+    if (!schema || !Array.isArray(schema.fields)) return fail("formulaire inconnu");
+    const text = String(body.text || "").slice(0, 12000).trim();
+    const files = (Array.isArray(body.files) ? body.files : []).slice(0, FILL_FILES);
+    if (!text && !files.length) return fail("rien à lire : écris quelques lignes ou ajoute un fichier");
+    if (!env.GEMINI_KEY && !env.AI) return fail("assistant pas encore activé", 503);
+    const used = await takeQuota(env, body, req);
+    if (used === null) return fail(`limite de ${AI_PER_DAY} demandes par jour atteinte, reviens demain`, 429);
+
+    // Fichiers : images à part, documents (PDF, Word) convertis en texte
+    const images = [], docs = [];
+    for (const f of files) {
+        const m = /^data:([^;,]+);base64,(.+)$/.exec(String(f.data || ""));
+        if (!m) continue;
+        const name = String(f.name || "document").slice(0, 80);
+        if (m[1].startsWith("image/")) images.push({ mime: m[1], b64: m[2], url: f.data });
+        else docs.push({ name, mime: m[1], b64: m[2] });
+    }
+
+    const lang = LANG_NAME[body.lang] || "français";
+    const system = "Tu remplis automatiquement un formulaire de document à partir des informations fournies (texte, photo ou document). "
+        + "Réponds UNIQUEMENT avec un objet JSON de la forme {\"values\":{},\"groups\":{}}, sans aucun texte autour. "
+        + "« values » : pour chaque champ simple que tu peux remplir, son identifiant « id » et sa valeur en texte. "
+        + "« groups » : pour chaque groupe, une liste d'éléments ; chaque élément est un objet {identifiant_du_champ: valeur}. "
+        + "Champs de type LIST : une valeur par ligne, séparées par \\n, sans tiret ni puce. "
+        + "Champs de type CHOICE : le numéro de l'option choisie (0, 1, 2…). "
+        + "N'invente rien : n'utilise que ce qui figure dans la source et omets les champs inconnus. "
+        + `Corrige l'orthographe et la grammaire sans changer le sens. Écris en ${lang}. Garde l'ordre de la source. `
+        + "Formulaire (identifiants, libellés et types) : " + JSON.stringify(schema);
+
+    let reply;
+    if (env.GEMINI_KEY) {
+        // Gemini lit directement les images et les PDF
+        const parts = [{ text: text ? "Informations fournies :\n" + text : "Lis les fichiers joints." }];
+        for (const im of images) parts.push({ inline_data: { mime_type: im.mime, data: im.b64 } });
+        for (const d of docs) parts.push({ inline_data: { mime_type: d.mime, data: d.b64 } });
+        reply = await gemini(env, system, parts, true);
+    } else {
+        let extra = "";
+        if (docs.length) {
+            if (!env.AI.toMarkdown) return fail("lecture des documents indisponible", 503);
+            const res = await env.AI.toMarkdown(docs.map((d) => ({ name: d.name, blob: new Blob([bytesOf(d.b64)], { type: d.mime }) })));
+            for (const r of [].concat(res || [])) {
+                if (r && r.data) extra += `\n\n--- ${r.name} ---\n` + String(r.data).slice(0, 15000);
+                else if (r && r.error) return fail(`fichier illisible (${r.name}) : ${r.error}`, 422);
+            }
+        }
+        const userText = (text ? "Informations fournies :\n" + text : "Lis les fichiers joints.") + extra;
+        const model = images.length ? (env.AI_VISION_MODEL || "@cf/meta/llama-4-scout-17b-16e-instruct") : (env.AI_MODEL || "@cf/mistralai/mistral-small-3.1-24b-instruct");
+        const content = images.length ? [{ type: "text", text: userText }, ...images.map((im) => ({ type: "image_url", image_url: { url: im.url } }))] : userText;
+        const input = { messages: [{ role: "system", content: system }, { role: "user", content }], max_tokens: 3500, temperature: 0.1 };
+        let res;
+        try { res = await env.AI.run(model, { ...input, response_format: { type: "json_object" } }); }
+        catch (e) { res = await env.AI.run(model, input); }
+        reply = res && res.response;
+    }
+    const parsed = parseJsonReply(reply);
+    if (!parsed) return fail("réponse de l'IA illisible, réessaie", 502);
+    return json({ ...cleanFill(parsed, schema), left: AI_PER_DAY - used - 1 });
 }
 
 // ---------------------------------------------------------------- Routage
@@ -179,6 +295,7 @@ export default {
             switch (url.pathname) {
                 case "/api/redeem": return await redeem(env, body);
                 case "/api/ai": return await ai(env, body, req);
+                case "/api/fill": return await fill(env, body, req);
                 case "/api/pay/init": return await payInit(env, body);
                 case "/api/pay/webhook": return await payWebhook(env, body);
                 case "/api/admin/codes": return await adminCodes(env, req, body);

@@ -383,6 +383,134 @@ async function formScreen(id) {
         return wrap;
     }
 
+    // --- remplissage automatique par l'IA (texte, photo, PDF ou Word)
+    const FILL_TYPES = ["TEXT", "MULTILINE", "LIST", "DATE", "NUMBER", "PHONE", "EMAIL", "CHOICE"];
+    function fillSchema() {
+        const field = (f) => {
+            const o = { id: f.id, label: tr(f.label), type: f.type };
+            if (f.hint) o.hint = tr(f.hint);
+            if (f.type === "CHOICE") o.options = f.options.map(tr);
+            return o;
+        };
+        const main = [...type.fields, ...(type.supportsCover && data.cover ? type.coverFields || [] : [])].filter((f) => FILL_TYPES.includes(f.type));
+        return {
+            document: tr(type.title),
+            fields: main.map(field),
+            groups: type.groups.map((g) => ({ id: g.id, label: tr(g.label), fields: g.fields.filter((f) => FILL_TYPES.includes(f.type)).map(field) })),
+        };
+    }
+
+    /** Photo réduite à 1600 px (JPEG) pour un envoi rapide, même avec une connexion moyenne. */
+    function shrinkImage(file) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+                const c = document.createElement("canvas");
+                c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+                const ctx = c.getContext("2d");
+                ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+                ctx.drawImage(img, 0, 0, c.width, c.height);
+                URL.revokeObjectURL(url);
+                resolve(c.toDataURL("image/jpeg", 0.85));
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image")); };
+            img.src = url;
+        });
+    }
+    const readDataUrl = (file) => new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result); r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+    });
+    const DOC_MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+
+    /** Place les réponses de l'IA dans le formulaire. Renvoie le nombre de champs remplis. */
+    function applyFill(res, replace) {
+        let n = 0;
+        const choiceOk = (f, v) => f.type !== "CHOICE" || (/^\d+$/.test(v) && +v < f.options.length);
+        const all = [...type.fields, ...(type.coverFields || [])];
+        for (const [id, v] of Object.entries(res.values || {})) {
+            const f = all.find((x) => x.id === id);
+            if (!f || !choiceOk(f, v)) continue;
+            if (!replace && String(data.values[id] || "").trim()) continue;
+            data.values[id] = v; n++;
+        }
+        for (const g of type.groups) {
+            const got = ((res.groups || {})[g.id] || []).map((it) => {
+                const o = {};
+                for (const f of g.fields) if (it[f.id] != null && choiceOk(f, it[f.id])) o[f.id] = it[f.id];
+                return o;
+            }).filter((o) => Object.keys(o).length);
+            if (!got.length) continue;
+            const kept = replace ? [] : (data.groups[g.id] || []).filter((it) => Object.values(it).some((x) => String(x || "").trim()));
+            data.groups[g.id] = [...kept, ...got];
+            n += got.reduce((a, o) => a + Object.keys(o).length, 0);
+        }
+        return n;
+    }
+
+    function fillDialog() {
+        if (!Pro.online()) { toast(s("pro_offline")); return; }
+        const files = [];
+        const back = h("div", { class: "dialog-back" });
+        const close = () => back.remove();
+        const text = h("textarea", { class: "input", rows: 6, dir: "auto", placeholder: s("fill_text_ph") });
+        const picker = h("input", { type: "file", multiple: true, class: "hidden", accept: "image/*,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+        const chips = h("div", { class: "chips" });
+        const replace = h("input", { type: "checkbox" });
+        const err = h("div", { class: "small danger-t" });
+        const drawChips = () => chips.replaceChildren(...files.map((f, i) => h("button", { type: "button", class: "chip on", onClick: () => { files.splice(i, 1); drawChips(); } }, "✕ " + f.name)));
+        picker.addEventListener("change", async () => {
+            err.textContent = "";
+            for (const f of [...(picker.files || [])]) {
+                if (files.length >= 4) break;
+                const ext = (f.name.split(".").pop() || "").toLowerCase();
+                try {
+                    if (f.type.startsWith("image/")) files.push({ name: f.name, data: await shrinkImage(f) });
+                    else if (DOC_MIME[ext]) {
+                        if (f.size > 8 * 1024 * 1024) { err.textContent = s("fill_too_big", f.name); continue; }
+                        const d = await readDataUrl(f);
+                        files.push({ name: f.name, data: d.replace(/^data:[^;,]*/, "data:" + DOC_MIME[ext]) });
+                    } else err.textContent = s("fill_bad_type", f.name);
+                } catch (e) { err.textContent = s("fill_bad_type", f.name); }
+            }
+            picker.value = "";
+            drawChips();
+        });
+        const body = h("div", { class: "stack-s" },
+            h("div", { class: "small muted" }, s("fill_sub")),
+            h("label", { class: "label" }, s("fill_text_label")), text,
+            h("button", { type: "button", class: "img-add", onClick: () => picker.click() }, icon("photo"), s("fill_files")), picker,
+            h("div", { class: "small muted" }, s("fill_files_hint")), chips,
+            h("label", { class: "row", style: { gap: "10px", marginTop: "6px" } }, replace, h("span", { class: "small" }, s("fill_replace"))),
+            err);
+        const go = h("button", {}, s("fill_go"));
+        go.addEventListener("click", async () => {
+            if (!text.value.trim() && !files.length) { err.textContent = s("fill_empty"); return; }
+            err.textContent = "";
+            go.disabled = true;
+            const wait = h("div", { class: "row" }, h("div", { class: "spinner" }), h("span", {}, s("fill_working")));
+            body.appendChild(wait);
+            try {
+                const res = await Pro.fill(fillSchema(), text.value.trim(), files, lang);
+                const n = applyFill(res, replace.checked);
+                if (!n) { wait.remove(); go.disabled = false; err.textContent = s("fill_none"); return; }
+                changed(); close(); rerender();
+                toast(s("fill_done", n), 5000);
+            } catch (e) {
+                wait.remove(); go.disabled = false;
+                err.textContent = s("ai_error", e.message);
+            }
+        });
+        back.appendChild(h("div", { class: "dialog wide", role: "dialog" }, h("h3", {}, s("fill_title")), body,
+            h("div", { class: "actions" }, h("button", { onClick: close }, s("cancel")), go)));
+        back.addEventListener("click", (e) => { if (e.target === back) close(); });
+        document.body.appendChild(back);
+        text.focus();
+    }
+
     // --- thème et police
     function themePicker() {
         const slides = type.module === "SLIDES", cv = type.id === "cv";
@@ -450,6 +578,9 @@ async function formScreen(id) {
 
     function content() {
         const nodes = [];
+        nodes.push(h("button", { type: "button", class: "card fill-card", onClick: fillDialog },
+            h("span", { class: "fill-ic", "aria-hidden": "true" }, "✨"),
+            h("span", { class: "grow" }, h("span", { class: "title-m" }, s("fill_title")), h("span", { class: "small muted" }, s("fill_card_sub")))));
         const style = h("div", { class: "card" }, themePicker(), colorPicker(), sizePicker(), fontPicker());
         if (type.supportsCover) {
             const sw = h("input", { type: "checkbox" });

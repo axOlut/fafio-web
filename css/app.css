@@ -293,3 +293,10 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
     .themes { flex-wrap: wrap; overflow: visible; }
     .toast { bottom: 32px; }
 }
+
+/* Remplir avec l'IA */
+.fill-card { display: flex; align-items: center; gap: 14px; width: 100%; text-align: start; font: inherit; color: inherit; cursor: pointer; border: 1.5px solid var(--primary-soft); background: linear-gradient(135deg, var(--primary-soft), var(--surface) 70%); }
+.fill-card .grow { display: flex; flex-direction: column; gap: 2px; }
+.fill-card .title-m { color: var(--primary); }
+.fill-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 22px; background: var(--surface); flex: none; }
+.row .spinner { width: 22px; height: 22px; border-width: 3px; margin: 0; flex: none; }

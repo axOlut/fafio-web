@@ -4,7 +4,7 @@ import { Settings } from "./storage.js";
 /** Mode test : bouton « crédits de test » dans les paramètres. */
 export const TEST_MODE = true;
 /** Adresse du serveur FAFIO (Cloudflare Workers). Vide = pas encore en ligne. */
-export const API_URL = "";
+export const API_URL = "https://fafio-api.infosaxolut.workers.dev";
 export const UNLOCK_DAYS = 30;
 export const PACKS = [
     { id: "p3", price: 200, credits: 3 },
@@ -58,6 +58,11 @@ export async function redeem(code) {
 export async function ai(task, text, lang) {
     const r = await call("/api/ai", { task, text, lang, device: deviceId() });
     return String(r.text || "").trim();
+}
+
+/** Remplissage automatique : schema = champs du formulaire, files = [{ name, data (data URL) }]. Renvoie { values, groups, left }. */
+export async function fill(schema, text, files, lang) {
+    return call("/api/fill", { schema, text, files, lang, device: deviceId() });
 }
 
 /** Achat d'un pack : ouvre la page de paiement Mobile Money, la vérification se fait au retour. */
