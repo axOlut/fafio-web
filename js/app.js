@@ -249,6 +249,17 @@ async function documents() {
     mount(h("div", { class: "screen" }, topbar(s("my_documents"), () => go("home")), body));
 }
 
+/** Choix de la police (formulaire et aperçu) : « police du thème » puis chaque police, écrite dans sa propre police. */
+function fontRow(cur, onPick, oneLine = false) {
+    const chips = [h("button", { type: "button", class: "chip" + (cur === "" ? " on" : ""), onClick: () => onPick("") }, s("font_theme"))];
+    for (const f of FONTS) {
+        const fam = f.file ? `"F-${f.id}", sans-serif` : f.id === "times" ? '"Times New Roman", serif' : "Arial, sans-serif";
+        if (f.file) ensureFont(f.id);
+        chips.push(h("button", { type: "button", class: "chip" + (cur === f.id ? " on" : ""), style: { fontFamily: fam }, onClick: () => onPick(f.id) }, f.label));
+    }
+    return h("div", { class: "chips" + (oneLine ? " one-line" : "") }, chips);
+}
+
 // ---------------------------------------------------------------- Formulaire
 
 async function formScreen(id) {
@@ -532,15 +543,9 @@ async function formScreen(id) {
     }
 
     function fontPicker() {
-        const cur = data.font || "";
-        const chips = [h("button", { type: "button", class: "chip" + (cur === "" ? " on" : ""), onClick: () => { data.font = ""; changed(); rerender(); } }, s("font_theme"))];
-        for (const f of FONTS) {
-            const fam = f.file ? `"F-${f.id}", sans-serif` : f.id === "times" ? '"Times New Roman", serif' : "Arial, sans-serif";
-            if (f.file) ensureFont(f.id);
-            chips.push(h("button", { type: "button", class: "chip" + (cur === f.id ? " on" : ""), style: { fontFamily: fam }, onClick: () => { data.font = f.id; changed(); rerender(); } }, f.label));
-        }
         return h("div", {}, h("div", { class: "title-m", style: { marginTop: "14px" } }, s("font_title")),
-            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("font_hint")), h("div", { class: "chips" }, chips));
+            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("font_hint")),
+            fontRow(data.font || "", (id) => { data.font = id; changed(); rerender(); }));
     }
 
     // --- groupes
@@ -655,11 +660,12 @@ async function previewScreen(id) {
         renderTimer = setTimeout(async () => { await Drafts.save(draft); render(); }, 250);
     };
     const drawStyle = () => {
-        tabs.replaceChildren(...["tab_theme", "tab_color", "tab_size"].map((k, i) => h("button", { class: "chip" + (tab === i ? " on" : ""),
+        tabs.replaceChildren(...["tab_theme", "tab_color", "tab_size", "tab_font"].map((k, i) => h("button", { class: "chip" + (tab === i ? " on" : ""),
             onClick: () => { tab = tab === i ? -1 : i; drawStyle(); } }, s(k))));
         if (tab === 0) styleBox.replaceChildren(themeRow(type, draft.data, (id) => { draft.data.theme = id; drawStyle(); restyle(); }));
         else if (tab === 1) styleBox.replaceChildren(colorRow(type, draft.data, s("color_auto"), (hex) => { draft.data.color = hex; drawStyle(); restyle(); }));
         else if (tab === 2) styleBox.replaceChildren(sizeRow(draft.data, null, (v) => { draft.data.scale = v; restyle(); }));
+        else if (tab === 3) styleBox.replaceChildren(fontRow(draft.data.font || "", (id) => { draft.data.font = id; drawStyle(); restyle(); }, true));
         else styleBox.replaceChildren();
     };
     drawStyle();

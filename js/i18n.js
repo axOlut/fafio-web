@@ -215,6 +215,7 @@ export default {
   "tab_theme": "Thème",
   "tab_color": "Couleur",
   "tab_size": "Taille",
+  "tab_font": "Police",
   "cv_model_title": "Modèle de CV",
   "cv_model_sub": "Choisis la mise en page, puis la couleur.",
   "updating": "Mise à jour…"
@@ -432,6 +433,7 @@ export default {
   "tab_theme": "Theme",
   "tab_color": "Colour",
   "tab_size": "Size",
+  "tab_font": "Font",
   "cv_model_title": "CV layout",
   "cv_model_sub": "Pick the layout, then the colour.",
   "updating": "Updating…"
@@ -634,6 +636,7 @@ export default {
   "tab_theme": "التصميم",
   "tab_color": "اللون",
   "tab_size": "الحجم",
+  "tab_font": "الخط",
   "cv_model_title": "نموذج السيرة",
   "cv_model_sub": "اختر التصميم ثم اللون.",
   "updating": "جارٍ التحديث…"

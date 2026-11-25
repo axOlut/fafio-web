@@ -300,3 +300,5 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
 .fill-card .title-m { color: var(--primary); }
 .fill-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 22px; background: var(--surface); flex: none; }
 .row .spinner { width: 22px; height: 22px; border-width: 3px; margin: 0; flex: none; }
+.chips.one-line { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.chips.one-line .chip { flex: none; white-space: nowrap; }
