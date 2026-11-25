@@ -60,9 +60,10 @@ export async function ai(task, text, lang) {
     return String(r.text || "").trim();
 }
 
-/** Remplissage automatique : schema = champs du formulaire, files = [{ name, data (data URL) }]. Renvoie { values, groups, left }. */
-export async function fill(schema, text, files, lang) {
-    return call("/api/fill", { schema, text, files, lang, device: deviceId() });
+/** Remplissage automatique : schema = champs du formulaire, files = [{ name, data (data URL) }],
+ * opts = { mode: "idea", rule, level, length, wiki } pour rédiger à partir d'une idée. Renvoie { values, groups, sources, left }. */
+export async function fill(schema, text, files, lang, opts = {}) {
+    return call("/api/fill", { schema, text, files, lang, device: deviceId(), ...opts });
 }
 
 /** Achat d'un pack : ouvre la page de paiement Mobile Money, la vérification se fait au retour. */

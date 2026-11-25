@@ -302,3 +302,5 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
 .row .spinner { width: 22px; height: 22px; border-width: 3px; margin: 0; flex: none; }
 .chips.one-line { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 .chips.one-line .chip { flex: none; white-space: nowrap; }
+.chips.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.chips.seg .chip { padding: 9px 8px; text-align: center; font-size: 13.5px; line-height: 1.2; }

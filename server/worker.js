@@ -240,20 +240,50 @@ async function fill(env, body, req) {
     }
 
     const lang = LANG_NAME[body.lang] || "français";
-    const system = "Tu remplis automatiquement un formulaire de document à partir des informations fournies (texte, photo ou document). "
-        + "Réponds UNIQUEMENT avec un objet JSON de la forme {\"values\":{},\"groups\":{}}, sans aucun texte autour. "
-        + "« values » : pour chaque champ simple que tu peux remplir, son identifiant « id » et sa valeur en texte. "
+    const idea = body.mode === "idea";
+    const rule = body.rule === "full" ? "full" : "facts";
+    const todo = TODO[body.lang] || TODO.fr;
+    const common = "Réponds UNIQUEMENT avec un objet JSON de la forme {\"values\":{},\"groups\":{}}, sans aucun texte autour. "
+        + "« values » : pour chaque champ simple que tu remplis, son identifiant « id » et sa valeur en texte. "
         + "« groups » : pour chaque groupe, une liste d'éléments ; chaque élément est un objet {identifiant_du_champ: valeur}. "
         + "Champs de type LIST : une valeur par ligne, séparées par \\n, sans tiret ni puce. "
         + "Champs de type CHOICE : le numéro de l'option choisie (0, 1, 2…). "
-        + "N'invente rien : n'utilise que ce qui figure dans la source et omets les champs inconnus. "
-        + `Corrige l'orthographe et la grammaire sans changer le sens. Écris en ${lang}. Garde l'ordre de la source. `
-        + "Formulaire (identifiants, libellés et types) : " + JSON.stringify(schema);
+        + `Écris en ${lang}, sans faute d'orthographe. `;
+    let system;
+    let sources = [];
+    let wikiText = "";
+    if (!idea) {
+        system = "Tu remplis automatiquement un formulaire de document à partir des informations fournies (texte, photo ou document). " + common
+            + "N'invente rien : n'utilise que ce qui figure dans la source et omets les champs inconnus. "
+            + "Corrige l'orthographe et la grammaire sans changer le sens. Garde l'ordre de la source. ";
+    } else {
+        const level = LEVELS[body.level] || LEVELS.lycee;
+        const size = SIZES[body.length] || SIZES.moyen;
+        system = "Tu es un rédacteur expert. À partir de l'idée donnée, tu rédiges le contenu complet d'un document en remplissant les champs du formulaire. " + common
+            + `Public : ${level}. Longueur : ${size}. `
+            + "Rédige un contenu exact, structuré et clair : un titre précis, une introduction, des parties qui se suivent logiquement, une conclusion. "
+            + "Dans les champs de texte long, sépare les paragraphes par une ligne vide ; tu peux faire des listes avec « - » en début de ligne. "
+            + "Pour une présentation, chaque diapositive a un titre court et 3 à 5 points brefs. "
+            + "N'invente jamais de citation, de statistique précise, de date ou de source : si une donnée précise est indispensable et que tu n'en es pas sûr, écris "
+            + `« ${todo} » à sa place. Ne rédige pas de bibliographie toi-même : laisse vides les champs de références ou de sources. `
+            + "Laisse vides les champs d'identité et d'administration : noms de personnes, établissement, entreprise, enseignant, encadreur, date, lieu, contacts, numéros, signataire. ";
+        if (rule === "facts") system += "Ce document décrit des faits réels que tu ne connais pas (lieu, personnes, résultats, chiffres, dates, missions réelles) : "
+            + `rédige le texte, mais à chaque endroit où un fait réel est nécessaire, écris « ${todo} » au lieu de l'inventer. `;
+        if (body.wiki) {
+            try {
+                const w = await wikipedia(env, text, body.lang);
+                sources = w.sources; wikiText = w.text;
+            } catch (e) { /* Wikipédia indisponible : on rédige sans */ }
+            if (wikiText) system += "Appuie-toi en priorité sur les extraits de Wikipédia fournis pour les faits. ";
+        }
+    }
+    system += "Formulaire (identifiants, libellés et types) : " + JSON.stringify(schema);
+    const intro = idea ? "Idée du document :\n" + (text || "(voir les fichiers joints)") : (text ? "Informations fournies :\n" + text : "Lis les fichiers joints.");
 
     let reply;
     if (env.GEMINI_KEY) {
         // Gemini lit directement les images et les PDF
-        const parts = [{ text: text ? "Informations fournies :\n" + text : "Lis les fichiers joints." }];
+        const parts = [{ text: intro + (wikiText ? "\n\nExtraits de Wikipédia :\n" + wikiText : "") }];
         for (const im of images) parts.push({ inline_data: { mime_type: im.mime, data: im.b64 } });
         for (const d of docs) parts.push({ inline_data: { mime_type: d.mime, data: d.b64 } });
         reply = await gemini(env, system, parts, true);
@@ -267,10 +297,11 @@ async function fill(env, body, req) {
                 else if (r && r.error) return fail(`fichier illisible (${r.name}) : ${r.error}`, 422);
             }
         }
-        const userText = (text ? "Informations fournies :\n" + text : "Lis les fichiers joints.") + extra;
+        if (wikiText) extra += "\n\nExtraits de Wikipédia :\n" + wikiText;
+        const userText = intro + extra;
         const model = images.length ? (env.AI_VISION_MODEL || "@cf/meta/llama-4-scout-17b-16e-instruct") : (env.AI_MODEL || "@cf/mistralai/mistral-small-3.1-24b-instruct");
         const content = images.length ? [{ type: "text", text: userText }, ...images.map((im) => ({ type: "image_url", image_url: { url: im.url } }))] : userText;
-        const input = { messages: [{ role: "system", content: system }, { role: "user", content }], max_tokens: 3500, temperature: 0.1 };
+        const input = { messages: [{ role: "system", content: system }, { role: "user", content }], max_tokens: idea ? 7000 : 3500, temperature: idea ? 0.5 : 0.1 };
         let res;
         try { res = await env.AI.run(model, { ...input, response_format: { type: "json_object" } }); }
         catch (e) { res = await env.AI.run(model, input); }
@@ -278,7 +309,62 @@ async function fill(env, body, req) {
     }
     const parsed = parseJsonReply(reply);
     if (!parsed) return fail("réponse de l'IA illisible, réessaie", 502);
-    return json({ ...cleanFill(parsed, schema), left: AI_PER_DAY - used - 1 });
+    return json({ ...cleanFill(parsed, schema), sources, left: AI_PER_DAY - used - 1 });
+}
+
+// ---------------------------------------------------------------- Rédaction à partir d'une idée
+
+const TODO = { fr: "[à compléter]", en: "[to be completed]", ar: "[يُستكمل]" };
+const LEVELS = {
+    college: "élèves de collège (vocabulaire simple, explications concrètes)",
+    lycee: "élèves de lycée (vocabulaire courant, notions expliquées)",
+    universite: "étudiants à l'université (vocabulaire précis, analyse approfondie)",
+    pro: "professionnels (ton soutenu, concret, orienté résultats)",
+};
+const SIZES = {
+    court: "court (2 parties d'un ou deux paragraphes, ou 6 diapositives environ)",
+    moyen: "moyen (3 parties de deux ou trois paragraphes, ou 10 diapositives environ)",
+    long: "détaillé (4 ou 5 parties de trois paragraphes ou plus, avec sous-parties, ou 14 diapositives environ)",
+};
+const WIKI_UA = "FAFIO/1.0 (https://axolut.github.io/fafio-web/)";
+
+/** Lit 1 ou 2 articles Wikipédia liés à l'idée (gratuit, sans clé). Renvoie { text, sources: [{ title, url }] }. */
+async function wikipedia(env, idea, lang) {
+    const wl = ["fr", "en", "ar"].includes(lang) ? lang : "fr";
+    // 1. sujets à chercher (l'IA les extrait de l'idée ; sinon l'idée elle-même)
+    let topics = [];
+    if (env.AI) {
+        try {
+            const r = await env.AI.run(env.AI_MODEL || "@cf/mistralai/mistral-small-3.1-24b-instruct", {
+                messages: [
+                    { role: "system", content: `Donne 1 ou 2 titres d'articles Wikipédia (en ${LANG_NAME[wl]}) qui couvrent le sujet de cette idée. Réponds uniquement par un tableau JSON de chaînes, par exemple ["Photosynthèse"].` },
+                    { role: "user", content: String(idea).slice(0, 600) },
+                ],
+                max_tokens: 60, temperature: 0,
+            });
+            const m = /\[[\s\S]*\]/.exec(String((r && r.response) || ""));
+            if (m) topics = JSON.parse(m[0]).filter((x) => typeof x === "string" && x.trim()).slice(0, 2);
+        } catch (e) { topics = []; }
+    }
+    if (!topics.length) topics = [String(idea).slice(0, 120)];
+    // 2. recherche puis texte des articles
+    const seen = new Set(), sources = [];
+    let text = "";
+    for (const q of topics) {
+        const sr = await fetch(`https://${wl}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(q)}&limit=1`, { headers: { "User-Agent": WIKI_UA } });
+        const sj = await sr.json().catch(() => ({}));
+        const page = (sj.pages || [])[0];
+        if (!page || seen.has(page.key)) continue;
+        seen.add(page.key);
+        const er = await fetch(`https://${wl}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles=${encodeURIComponent(page.title)}`, { headers: { "User-Agent": WIKI_UA } });
+        const ej = await er.json().catch(() => ({}));
+        const pg = Object.values((ej.query && ej.query.pages) || {})[0];
+        const extract = String((pg && pg.extract) || "").replace(/\n{3,}/g, "\n\n").slice(0, 9000);
+        if (!extract) continue;
+        text += `\n\n=== ${page.title} ===\n` + extract;
+        sources.push({ title: page.title, url: `https://${wl}.wikipedia.org/wiki/${encodeURIComponent(page.title.replace(/ /g, "_"))}` });
+    }
+    return { text: text.trim(), sources };
 }
 
 // ---------------------------------------------------------------- Routage

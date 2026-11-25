@@ -249,6 +249,29 @@ async function documents() {
     mount(h("div", { class: "screen" }, topbar(s("my_documents"), () => go("home")), body));
 }
 
+// ---------------------------------------------------------------- Remplir avec l'IA : règles par document
+// Même tableau dans l'application Android (AiFill.kt). « full » : rédaction complète à partir d'une idée ;
+// « facts » : rédaction, mais les faits réels restent [à compléter] ; absent : uniquement à partir des informations fournies.
+const IDEA_RULE = {
+    tpe: "full", expose: "full", questionnaire: "full", fiche: "full", suivi: "full",
+    tp: "facts", memoire: "facts", stage: "facts", activites: "facts", motivation: "facts", pitch: "facts", lettre: "facts", note: "facts",
+};
+const IDEA_WIKI = ["tpe", "expose", "tp", "memoire"];
+/** Champs d'identité et d'administration que l'IA ne remplit jamais à partir d'une idée (et références : on y met les vraies sources). */
+const IDEA_SKIP = new Set(["institution", "org", "org_details", "faculty", "degree", "teacher", "supervisor", "supervisor_role", "supervisors", "tutor",
+    "author", "author_info", "director", "jury", "date", "defense_date", "period", "city", "place", "sender", "sender_function", "sender_address",
+    "sender_phone", "sender_email", "recipient", "company", "signatory", "signatory_function", "number", "reference", "copies", "attachments",
+    "contact", "course", "chair", "secretary", "attendees", "absents", "references", "signature"]);
+const IDEA_SKIP_GROUPS = new Set(["members", "figures", "tables"]);
+const TODO_RE = /\[(à compléter|to be completed|يُستكمل)\]/g;
+const countTodo = (data) => {
+    let n = 0;
+    const scan = (v) => { const m = String(v || "").match(TODO_RE); if (m) n += m.length; };
+    Object.values(data.values || {}).forEach(scan);
+    Object.values(data.groups || {}).forEach((items) => (items || []).forEach((it) => Object.values(it).forEach(scan)));
+    return n;
+};
+
 /** Choix de la police (formulaire et aperçu) : « police du thème » puis chaque police, écrite dans sa propre police. */
 function fontRow(cur, onPick, oneLine = false) {
     const chips = [h("button", { type: "button", class: "chip" + (cur === "" ? " on" : ""), onClick: () => onPick("") }, s("font_theme"))];
@@ -396,19 +419,39 @@ async function formScreen(id) {
 
     // --- remplissage automatique par l'IA (texte, photo, PDF ou Word)
     const FILL_TYPES = ["TEXT", "MULTILINE", "LIST", "DATE", "NUMBER", "PHONE", "EMAIL", "CHOICE"];
-    function fillSchema() {
+    function fillSchema(idea) {
         const field = (f) => {
             const o = { id: f.id, label: tr(f.label), type: f.type };
             if (f.hint) o.hint = tr(f.hint);
             if (f.type === "CHOICE") o.options = f.options.map(tr);
             return o;
         };
-        const main = [...type.fields, ...(type.supportsCover && data.cover ? type.coverFields || [] : [])].filter((f) => FILL_TYPES.includes(f.type));
+        const keep = (f) => FILL_TYPES.includes(f.type) && !(idea && (IDEA_SKIP.has(f.id) || f.id.startsWith("cv_")));
+        const main = [...type.fields, ...(type.supportsCover && data.cover ? type.coverFields || [] : [])].filter(keep);
         return {
             document: tr(type.title),
             fields: main.map(field),
-            groups: type.groups.map((g) => ({ id: g.id, label: tr(g.label), fields: g.fields.filter((f) => FILL_TYPES.includes(f.type)).map(field) })),
+            groups: type.groups.filter((g) => !(idea && IDEA_SKIP_GROUPS.has(g.id)))
+                .map((g) => ({ id: g.id, label: tr(g.label), fields: g.fields.filter(keep).map(field) })),
         };
+    }
+
+    /** Ajoute les vraies sources (Wikipédia) : dans le champ Références, ou en dernière diapositive. */
+    function addSources(sources, replace) {
+        if (!sources || !sources.length) return 0;
+        const lines = sources.map((x) => `${x.title} — ${x.url}`);
+        if (type.fields.some((f) => f.id === "references")) {
+            const cur = replace ? "" : String(data.values.references || "").trim();
+            data.values.references = [cur, ...lines.filter((l) => !cur.includes(l))].filter((x) => x).join("\n");
+            return lines.length;
+        }
+        const g = type.groups.find((x) => x.id === "slides");
+        if (g) {
+            const items = data.groups.slides || (data.groups.slides = []);
+            items.push({ title: s("fill_sources_title"), points: lines.join("\n") });
+            return lines.length;
+        }
+        return 0;
     }
 
     /** Photo réduite à 1600 px (JPEG) pour un envoi rapide, même avec une connexion moyenne. */
@@ -464,13 +507,18 @@ async function formScreen(id) {
 
     function fillDialog() {
         if (!Pro.online()) { toast(s("pro_offline")); return; }
+        const rule = IDEA_RULE[type.id] || "";
+        let mode = "info", level = "lycee", length = "moyen";
         const files = [];
         const back = h("div", { class: "dialog-back" });
         const close = () => back.remove();
-        const text = h("textarea", { class: "input", rows: 6, dir: "auto", placeholder: s("fill_text_ph") });
+        const text = h("textarea", { class: "input", rows: 6, dir: "auto" });
+        const textLabel = h("label", { class: "label" });
         const picker = h("input", { type: "file", multiple: true, class: "hidden", accept: "image/*,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
         const chips = h("div", { class: "chips" });
         const replace = h("input", { type: "checkbox" });
+        const wiki = h("input", { type: "checkbox" });
+        wiki.checked = IDEA_WIKI.includes(type.id);
         const err = h("div", { class: "small danger-t" });
         const drawChips = () => chips.replaceChildren(...files.map((f, i) => h("button", { type: "button", class: "chip on", onClick: () => { files.splice(i, 1); drawChips(); } }, "✕ " + f.name)));
         picker.addEventListener("change", async () => {
@@ -490,26 +538,59 @@ async function formScreen(id) {
             picker.value = "";
             drawChips();
         });
+        const choiceRow = (opts, get, set) => {
+            const row = h("div", { class: "chips" });
+            const draw = () => row.replaceChildren(...opts.map(([v, k]) => h("button", { type: "button", class: "chip" + (get() === v ? " on" : ""), onClick: () => { set(v); draw(); } }, s(k))));
+            draw();
+            return row;
+        };
+        const ideaBox = h("div", { class: "stack-s" },
+            h("div", { class: "label" }, s("fill_level")),
+            choiceRow([["college", "fill_level_college"], ["lycee", "fill_level_lycee"], ["universite", "fill_level_univ"], ["pro", "fill_level_pro"]], () => level, (v) => { level = v; }),
+            h("div", { class: "label" }, s("fill_length")),
+            choiceRow([["court", "fill_length_short"], ["moyen", "fill_length_medium"], ["long", "fill_length_long"]], () => length, (v) => { length = v; }),
+            h("label", { class: "row", style: { gap: "10px" } }, wiki, h("span", { class: "small" }, s("fill_wiki"))));
+        const sub = h("div", { class: "small muted" });
+        const filesBtnLabel = h("span");
+        const filesHint = h("div", { class: "small muted" });
+        const tabs = h("div", { class: "chips seg" });
+        const drawMode = () => {
+            const idea = mode === "idea";
+            tabs.replaceChildren(...[["info", "fill_tab_info"], ["idea", "fill_tab_idea"]].map(([m, k]) => h("button", { type: "button", class: "chip" + (mode === m ? " on" : ""), onClick: () => { mode = m; drawMode(); } }, s(k))));
+            sub.textContent = idea ? s(rule === "full" ? "fill_idea_sub_full" : "fill_idea_sub_facts") : s("fill_sub");
+            textLabel.textContent = idea ? s("fill_idea_label") : s("fill_text_label");
+            text.placeholder = idea ? s("fill_idea_ph") : s("fill_text_ph");
+            filesBtnLabel.textContent = idea ? s("fill_idea_files") : s("fill_files");
+            filesHint.textContent = s("fill_files_hint");
+            ideaBox.style.display = idea ? "" : "none";
+            err.textContent = "";
+        };
         const body = h("div", { class: "stack-s" },
-            h("div", { class: "small muted" }, s("fill_sub")),
-            h("label", { class: "label" }, s("fill_text_label")), text,
-            h("button", { type: "button", class: "img-add", onClick: () => picker.click() }, icon("photo"), s("fill_files")), picker,
-            h("div", { class: "small muted" }, s("fill_files_hint")), chips,
+            rule ? tabs : null,
+            sub, textLabel, text, ideaBox,
+            h("button", { type: "button", class: "img-add", onClick: () => picker.click() }, icon("photo"), filesBtnLabel), picker,
+            filesHint, chips,
             h("label", { class: "row", style: { gap: "10px", marginTop: "6px" } }, replace, h("span", { class: "small" }, s("fill_replace"))),
             err);
+        drawMode();
         const go = h("button", {}, s("fill_go"));
         go.addEventListener("click", async () => {
+            const idea = mode === "idea";
+            if (idea && !text.value.trim()) { err.textContent = s("fill_idea_empty"); return; }
             if (!text.value.trim() && !files.length) { err.textContent = s("fill_empty"); return; }
             err.textContent = "";
             go.disabled = true;
-            const wait = h("div", { class: "row" }, h("div", { class: "spinner" }), h("span", {}, s("fill_working")));
+            const wait = h("div", { class: "row" }, h("div", { class: "spinner" }), h("span", {}, s(idea ? "fill_idea_working" : "fill_working")));
             body.appendChild(wait);
             try {
-                const res = await Pro.fill(fillSchema(), text.value.trim(), files, lang);
-                const n = applyFill(res, replace.checked);
+                const opts = idea ? { mode: "idea", rule, level, length, wiki: wiki.checked } : {};
+                const res = await Pro.fill(fillSchema(idea), text.value.trim(), files, lang, opts);
+                let n = applyFill(res, replace.checked);
+                if (idea) n += addSources(res.sources, replace.checked);
                 if (!n) { wait.remove(); go.disabled = false; err.textContent = s("fill_none"); return; }
                 changed(); close(); rerender();
-                toast(s("fill_done", n), 5000);
+                const todo = countTodo(data);
+                toast(todo ? s("fill_done_todo", n, todo) : s("fill_done", n), 6000);
             } catch (e) {
                 wait.remove(); go.disabled = false;
                 err.textContent = s("ai_error", e.message);
@@ -631,6 +712,8 @@ async function formScreen(id) {
         h("div", { class: "bottom-bar" }, h("button", { class: "btn", onClick: async () => {
             const problems = validate();
             if (problems.length) { toast(s("required_missing", problems.join(", ")), 5000); return; }
+            const todo = countTodo(data);
+            if (todo && !(await confirmDialog(s("todo_title"), s("todo_text", todo), s("todo_continue")))) return;
             clearTimeout(timer); await persist(); go("preview/" + id);
         } }, icon("eye"), s("preview_export"))));
     mount(root);
