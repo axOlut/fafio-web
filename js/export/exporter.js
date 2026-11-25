@@ -6,7 +6,8 @@ import { buildFrom, chartSpec } from "../forms/catalog.js";
 import { Form } from "../forms/model.js";
 import { themeFor, font as fontSpec, parseColor, tint } from "../forms/themes.js";
 import { renderChart } from "./chart.js";
-import { renderDoc, toPdf } from "./pdf.js";
+import { renderDoc, toPdf, cvPlace } from "./pdf.js";
+import { CV_MOVABLE } from "./cv.js";
 import { ensureFont, fontBytes, assetBytes, assetText } from "./fonts.js";
 import { Images, imageRefs } from "../data/storage.js";
 import { compressZip } from "../util.js";
@@ -93,6 +94,13 @@ export async function buildDoc(type, data, lang, forWord = false) {
         doc.cv.model = themeFor(type, data).id.replace("cv_", "");
         const ph = doc.cv.photoRef ? images.get(doc.cv.photoRef) : null;
         if (ph) doc.cv.photo = await squarePhoto(ph.data).catch(() => null);
+        if (doc.cv.model === "dark" || doc.cv.model === "light") {
+            // choix de l'utilisateur (Disposition) puis équilibrage automatique des deux colonnes
+            const v = data.values || {};
+            doc.cv.prefs = Object.fromEntries(CV_MOVABLE.map((k) => [k, v["place_" + k] || "auto"]));
+            if (document.fonts) await document.fonts.ready;
+            doc.cv.place = cvPlace(doc);
+        }
     }
     applyFigures(doc, data, lang, images);
     return doc;

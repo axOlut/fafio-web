@@ -268,7 +268,14 @@ export function writeDocx(doc) {
         return r.toString();
     }
 
-    /** Colonne principale : profil, compétences (sans barre), expériences, formations, langues, intérêts, références. */
+    /** Colonne d'une rubrique de CV (modèles à barre latérale) : celle calculée pour le PDF (cv.place), sinon la place habituelle. */
+    function cvWhere(sec) {
+        let cv = doc.cv;
+        let def = { profile: "main", education: "main", skills: "side", languages: "side", interests: "side", references: "main" };
+        return (cv.place && cv.place[sec]) || def[sec];
+    }
+
+    /** Colonne principale : mêmes rubriques et même ordre que le PDF (export/cv.js). */
     function cvMain(width, indent, firstStart) {
         let b = new SB();
         let cv = doc.cv;
@@ -277,44 +284,41 @@ export function writeDocx(doc) {
         let first = firstStart;
         let ind = indent > 0 ? "<w:ind w:left=\"" + indent + "\"/>" : "";
         let cw = width - indent;
-        if (!cv.profile.isEmpty()) {
-            b.append(cvTitle(cv.lProfile, false, first, width)); first = false;
-            b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(cv.profile, false, false, hp(19), "1F2937", null)));
-        }
-        if (!sidebar && !cv.skills.isEmpty()) {
-            b.append(cvTitle(cv.lSkills, false, first, width)); first = false;
-            if (model.equals("center")) b.append(cvGrid(cv.skills, cw));
-            else b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(cv.skills.join("   |   "), false, false, hp(19), "1F2937", null)));
-        }
+        let here = (sec) => !sidebar || cvWhere(sec) === "main";
+        let para = (text) => cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(text, false, false, hp(19), "1F2937", null));
+        let list = (label, items) => {
+            if (items.isEmpty()) return;
+            b.append(cvTitle(label, false, first, width)); first = false;
+            if (model.equals("center")) b.append(cvGrid(items, cw));
+            else b.append(para(items.join("   |   ")));
+        };
+        if (!cv.profile.isEmpty() && here("profile")) { b.append(cvTitle(cv.lProfile, false, first, width)); first = false; b.append(para(cv.profile)); }
+        if (!sidebar) list(cv.lSkills, cv.skills);
         if (!cv.experience.isEmpty()) {
             b.append(cvTitle(cv.lExperience, false, first, width)); first = false;
             for (let i = 0; i < cv.experience.length; i++) b.append(cvEntry(cv.experience.get(i), width, indent, i == 0, false));
         }
-        if (!cv.education.isEmpty()) {
+        if (!cv.education.isEmpty() && here("education")) {
             b.append(cvTitle(cv.lEducation, false, first, width)); first = false;
             for (let i = 0; i < cv.education.length; i++) b.append(cvEntry(cv.education.get(i), width, indent, i == 0, true));
         }
-        if (!sidebar) {
-            for (let k = 0; k < 2; k++) {
-                let list = k == 0 ? cv.languages : cv.interests;
-                if (list.isEmpty()) continue;
-                b.append(cvTitle(k == 0 ? cv.lLanguages : cv.lInterests, false, first, width)); first = false;
-                if (model.equals("center")) b.append(cvGrid(list, cw));
-                else b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(list.join("   |   "), false, false, hp(19), "1F2937", null)));
-            }
-        }
-        if (!cv.references.isEmpty()) {
+        if (sidebar && here("skills")) list(cv.lSkills, cv.skills);
+        if (here("languages")) list(cv.lLanguages, cv.languages);
+        if (here("interests")) list(cv.lInterests, cv.interests);
+        if (!cv.references.isEmpty() && here("references")) {
             b.append(cvTitle(cv.lReferences, false, first, width));
-            b.append(cvPara("<w:spacing w:before=\"40\" w:after=\"60\"/>" + ind, run(cv.references, false, false, hp(19), "1F2937", null)));
+            b.append(para(cv.references));
         }
         return b.toString();
     }
 
+    /** Colonne de côté : photo, coordonnées, puis les rubriques placées sur le côté (même ordre que le PDF). */
     function cvSide(width) {
         let b = new SB();
         let cv = doc.cv;
         let dark = cv.model.equals("dark");
         let ink = dark ? "FFFFFF" : "1F2937";
+        let soft = dark ? "DDE4F0" : "6B7280";
         let dot = dark ? "FFFFFF" : accent;
         if (cv.photo != null) {
             b.append(cvPara("<w:jc w:val=\"center\"/><w:spacing w:before=\"0\" w:after=\"200\"/>", cvPhoto(cv.photo, 1500000, dark ? "FFFFFF" : null, dark ? 57150 : 0)));
@@ -326,11 +330,31 @@ export function writeDocx(doc) {
                 b.append(cvPara("<w:spacing w:before=\"0\" w:after=\"40\"/>", run(cvSymbol(ct[0]), false, false, hp(18), dark ? "FFFFFF" : accent, null) + run(ct[1], false, false, hp(18), ink, null)));
             }
         }
-        for (let k = 0; k < 3; k++) {
-            let list = k == 0 ? cv.skills : k == 1 ? cv.languages : cv.interests;
-            if (list.isEmpty()) continue;
-            b.append(cvTitle(k == 0 ? cv.lSkills : k == 1 ? cv.lLanguages : cv.lInterests, true, first, width)); first = false;
-            b.append(cvBullets(list, ink, dot, 0));
+        let text = (t, size, color, bold, before) => cvPara("<w:spacing w:before=\"" + before + "\" w:after=\"20\"/>", run(t, bold, false, hp(size), color, null));
+        for (const sec of ["profile", "education", "skills", "languages", "interests", "references"]) {
+            if (cvWhere(sec) !== "side") continue;
+            if (sec === "profile" || sec === "references") {
+                if (cv[sec].isEmpty()) continue;
+                b.append(cvTitle(sec === "profile" ? cv.lProfile : cv.lReferences, true, first, width)); first = false;
+                b.append(text(cv[sec], 19, ink, false, 40));
+            } else if (sec === "education") {
+                if (cv.education.isEmpty()) continue;
+                b.append(cvTitle(cv.lEducation, true, first, width)); first = false;
+                for (let i = 0; i < cv.education.length; i++) {
+                    let e = cv.education.get(i);
+                    b.append(text(e.title, 20, ink, true, i == 0 ? 60 : 160));
+                    if (!e.org.isEmpty()) b.append(text(e.org, 18, soft, false, 0));
+                    if (!e.period.isEmpty()) b.append(text(e.period, 18, soft, false, 0));
+                    if (!e.details.isEmpty()) b.append(text(e.details, 18, soft, false, 0));
+                    if (!e.bullets.isEmpty()) b.append(cvBullets(e.bullets, ink, dot, 0));
+                }
+            } else {
+                let items = cv[sec];
+                if (items.isEmpty()) continue;
+                let label = sec === "skills" ? cv.lSkills : sec === "languages" ? cv.lLanguages : cv.lInterests;
+                b.append(cvTitle(label, true, first, width)); first = false;
+                b.append(cvBullets(items, ink, dot, 0));
+            }
         }
         return b.toString();
     }

@@ -36,6 +36,11 @@ class Pages {
     }
 }
 
+/** Répartition des rubriques d'un CV à barre latérale, calculée une fois pour le PDF, l'aperçu et le Word. */
+export function cvPlace(doc) {
+    return new CvPainter(doc, new Pages(595, 842, 1, true), new Faces(doc.theme)).place;
+}
+
 /**
  * Dessine le document. Renvoie { pages: [canvas], w, h } (w, h en points).
  * scale = pixels par point (2 pour l'aperçu, 2.5 pour le PDF).

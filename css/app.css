@@ -307,3 +307,9 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
 .chips.one-line .chip { flex: none; white-space: nowrap; }
 .chips.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .chips.seg .chip { padding: 9px 8px; text-align: center; font-size: 13.5px; line-height: 1.2; }
+
+/* CV à barre latérale : disposition des rubriques */
+.layout-rows { display: grid; gap: 8px; }
+.layout-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr); align-items: center; gap: 10px; }
+.chips.seg3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.chips.seg3 .chip { padding: 7px 4px; text-align: center; font-size: 13px; }

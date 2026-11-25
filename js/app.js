@@ -8,7 +8,8 @@ import { themeRow, colorRow, sizeRow } from "./ui/style.js";
 import * as Pro from "./data/pro.js";
 import { blank, isVisible, imgKey, capKey, Form } from "./forms/model.js";
 import { example } from "./forms/examples.js";
-import { THEMES, FONTS, themeOf } from "./forms/themes.js";
+import { THEMES, FONTS, themeOf, themeFor } from "./forms/themes.js";
+import { CV_MOVABLE } from "./export/cv.js";
 import { columnsOn } from "./forms/science.js";
 import { Drafts, Images, Settings } from "./data/storage.js";
 import { exportFile, preview, sections, fileName, EXT, MIME } from "./export/exporter.js";
@@ -271,6 +272,27 @@ const countTodo = (data) => {
     Object.values(data.groups || {}).forEach((items) => (items || []).forEach((it) => Object.values(it).forEach(scan)));
     return n;
 };
+
+// ---------------------------------------------------------------- CV à barre latérale : disposition des rubriques
+/** Modèle de CV avec colonne de côté (« Barre latérale foncée » ou « claire ») ? */
+const sidebarCv = (type, data) => type.id === "cv" && /^cv_(dark|light)$/.test(themeFor(type, data).id);
+
+/** Pour chaque rubrique déplaçable : Auto / Côté / Principal (valeurs place_<rubrique> du formulaire). */
+function layoutRows(data, onChange) {
+    const box = h("div", { class: "layout-rows" });
+    const draw = () => box.replaceChildren(...CV_MOVABLE.map((sec) => {
+        const cur = (data.values || {})["place_" + sec] || "auto";
+        return h("div", { class: "layout-row" }, h("span", { class: "small" }, s("sec_" + sec)),
+            h("div", { class: "chips seg3" }, ...[["auto", "place_auto"], ["side", "place_side"], ["main", "place_main"]].map(([v, k]) =>
+                h("button", { type: "button", class: "chip" + (cur === v ? " on" : ""), onClick: () => {
+                    data.values = data.values || {};
+                    if (v === "auto") delete data.values["place_" + sec]; else data.values["place_" + sec] = v;
+                    draw(); onChange();
+                } }, s(k)))));
+    }));
+    draw();
+    return box;
+}
 
 /** Choix de la police (formulaire et aperçu) : « police du thème » puis chaque police, écrite dans sa propre police. */
 function fontRow(cur, onPick, oneLine = false) {
@@ -611,6 +633,12 @@ async function formScreen(id) {
             h("div", { class: "small muted", style: { marginBottom: "8px" } }, s(cv ? "cv_model_sub" : slides ? "slide_theme_sub" : "theme_sub")), row);
     }
 
+    function layoutPicker() {
+        return h("div", {}, h("div", { class: "title-m", style: { marginTop: "14px" } }, s("layout_title")),
+            h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("layout_sub")),
+            layoutRows(data, () => changed()));
+    }
+
     function colorPicker() {
         return h("div", {}, h("div", { class: "title-m", style: { marginTop: "14px" } }, s("color_title")),
             h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("color_sub")),
@@ -667,7 +695,7 @@ async function formScreen(id) {
         nodes.push(h("button", { type: "button", class: "card fill-card", onClick: fillDialog },
             h("span", { class: "fill-ic", "aria-hidden": "true" }, "✨"),
             h("span", { class: "grow" }, h("span", { class: "title-m" }, s("fill_title")), h("span", { class: "small muted" }, s("fill_card_sub")))));
-        const style = h("div", { class: "card" }, themePicker(), colorPicker(), sizePicker(), fontPicker());
+        const style = h("div", { class: "card" }, themePicker(), sidebarCv(type, data) ? layoutPicker() : null, colorPicker(), sizePicker(), fontPicker());
         if (type.supportsCover) {
             const sw = h("input", { type: "checkbox" });
             sw.checked = !!data.cover;
@@ -743,12 +771,15 @@ async function previewScreen(id) {
         renderTimer = setTimeout(async () => { await Drafts.save(draft); render(); }, 250);
     };
     const drawStyle = () => {
-        tabs.replaceChildren(...["tab_theme", "tab_color", "tab_size", "tab_font"].map((k, i) => h("button", { class: "chip" + (tab === i ? " on" : ""),
+        const names = ["tab_theme", "tab_color", "tab_size", "tab_font", ...(sidebarCv(type, draft.data) ? ["tab_layout"] : [])];
+        if (tab >= names.length) tab = -1;
+        tabs.replaceChildren(...names.map((k, i) => h("button", { class: "chip" + (tab === i ? " on" : ""),
             onClick: () => { tab = tab === i ? -1 : i; drawStyle(); } }, s(k))));
         if (tab === 0) styleBox.replaceChildren(themeRow(type, draft.data, (id) => { draft.data.theme = id; drawStyle(); restyle(); }));
         else if (tab === 1) styleBox.replaceChildren(colorRow(type, draft.data, s("color_auto"), (hex) => { draft.data.color = hex; drawStyle(); restyle(); }));
         else if (tab === 2) styleBox.replaceChildren(sizeRow(draft.data, null, (v) => { draft.data.scale = v; restyle(); }));
         else if (tab === 3) styleBox.replaceChildren(fontRow(draft.data.font || "", (id) => { draft.data.font = id; drawStyle(); restyle(); }, true));
+        else if (tab === 4) styleBox.replaceChildren(h("div", { class: "small muted", style: { marginBottom: "8px" } }, s("layout_sub")), layoutRows(draft.data, restyle));
         else styleBox.replaceChildren();
     };
     drawStyle();

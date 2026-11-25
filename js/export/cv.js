@@ -6,6 +6,16 @@ import { tint } from "../forms/themes.js";
 const WHITE = 0xFFFFFFFF;
 const INK = 0xFF1F2937, MUTED = 0xFF6B7280;
 
+/**
+ * Modèles à barre latérale : rubriques qui peuvent aller d'une colonne à l'autre.
+ * Les coordonnées restent toujours sur le côté, les expériences toujours dans la partie principale.
+ * Même logique dans CvPainter.kt (application Android) et dans le Word (docx.js).
+ */
+export const CV_MOVABLE = ["profile", "education", "skills", "languages", "interests", "references"];
+const PREFER = { profile: "main", education: "main", skills: "side", languages: "side", interests: "side", references: "main" };
+const SIDE_ORDER = ["profile", "education", "skills", "languages", "interests", "references"];
+const MAIN_ORDER = ["profile", "experience", "education", "skills", "languages", "interests", "references"];
+
 export class CvPainter {
     constructor(doc, pages, faces) {
         this.doc = doc; this.pages = pages; this.cv = doc.cv; this.faces = faces;
@@ -24,6 +34,48 @@ export class CvPainter {
         else if (model === "center") { this.sideX = 0; this.sideW = 0; this.mainX = 48; this.mainW = pw - 96; }
         else { this.sideX = 0; this.sideW = 0; this.mainX = 36; this.mainW = pw - 72; }
         this.c = pages.dry ? pages.dryCtx : document.createElement("canvas").getContext("2d");
+        this.place = this.sidebar ? (this.cv.place || this.computePlace()) : null;
+    }
+
+    // ------------------------------------------------------------------ Répartition entre les deux colonnes
+
+    /** Hauteur occupée par une suite d'éléments (le premier écart ne compte pas). */
+    heightOf(items) { return items.reduce((a, it, i) => a + it.h + (i ? it.gap : 0), 0); }
+
+    /** Rubriques non vides du CV. */
+    present(sec) {
+        const cv = this.cv;
+        if (sec === "profile" || sec === "references") return !!String(cv[sec] || "").trim();
+        return (cv[sec] || []).length > 0;
+    }
+
+    /**
+     * Choisit la colonne de chaque rubrique déplaçable : les choix de l'utilisateur (cv.prefs : side / main) sont respectés,
+     * les autres (« auto ») sont répartis pour que les deux colonnes finissent à peu près à la même hauteur.
+     * À égalité, chaque rubrique garde sa place habituelle.
+     */
+    computePlace() {
+        const prefs = this.cv.prefs || {};
+        const place = {};
+        const secs = CV_MOVABLE.filter((s) => this.present(s));
+        CV_MOVABLE.forEach((s) => { place[s] = prefs[s] === "side" || prefs[s] === "main" ? prefs[s] : PREFER[s]; });
+        const auto = secs.filter((s) => prefs[s] !== "side" && prefs[s] !== "main");
+        const blockH = (sec, side) => this.heightOf(this.section(sec, side, false)) + 16;
+        const hSide = {}, hMain = {};
+        secs.forEach((s) => { hSide[s] = blockH(s, true); hMain[s] = blockH(s, false); });
+        const baseSide = this.heightOf(this.sideBase());
+        const baseMain = this.heightOf(this.mainHead()) + (this.cv.experience.length ? this.heightOf(this.section("experience", false, true)) + 16 : 0);
+        let best = null;
+        for (let mask = 0; mask < 1 << auto.length; mask++) {
+            const trial = { ...place };
+            auto.forEach((s, i) => { trial[s] = mask & (1 << i) ? "side" : "main"; });
+            let side = baseSide, main = baseMain, moved = 0;
+            secs.forEach((s) => { if (trial[s] === "side") side += hSide[s]; else main += hMain[s]; });
+            auto.forEach((s) => { if (trial[s] !== PREFER[s]) moved++; });
+            const cost = Math.abs(side - main) + moved * 30;
+            if (!best || cost < best.cost) best = { cost, trial };
+        }
+        return best ? best.trial : place;
     }
 
     tp(size, bold = false, color = INK, headFont = false, italic = false, spacing = 0) {
@@ -219,10 +271,10 @@ export class CvPainter {
         return out;
     }
 
-    gridItems(list, x, w) {
-        const colW = w / 3, out = [];
-        for (let i = 0; i < list.length; i += 3) {
-            const ls = list.slice(i, i + 3).map((s) => this.lay(s, this.tp(9.5), colW - 14));
+    gridItems(list, x, w, cols = 3) {
+        const colW = w / cols, out = [];
+        for (let i = 0; i < list.length; i += cols) {
+            const ls = list.slice(i, i + cols).map((s) => this.lay(s, this.tp(9.5), colW - 14));
             const h = Math.max(...ls.map((l) => l.height));
             out.push({ h, gap: 4, keep: false, draw: (c, y) => {
                 ls.forEach((l, k) => {
@@ -265,8 +317,9 @@ export class CvPainter {
 
     // ------------------------------------------------------------------ Colonnes
 
-    sideItems() {
-        const out = [], x = this.sideX, w = this.sideW, cv = this.cv;
+    /** Haut de la colonne de côté : photo et coordonnées (toujours sur le côté). */
+    sideBase() {
+        const out = [], cv = this.cv, x = this.sideX, w = this.sideW;
         if (this.photo) {
             const d = 118;
             out.push({ h: d + 22, gap: 0, keep: false, draw: (c, y) => {
@@ -274,9 +327,8 @@ export class CvPainter {
                 if (this.model === "dark") this.photoAt(c, cx, y + d / 2 + 6, d, WHITE, 6, 70); else this.photoAt(c, cx, y + d / 2 + 6, d, null, 0);
             } });
         }
-        let first = !this.photo;
         if (cv.contacts.length) {
-            out.push(this.titleItem(cv.lContact, x, w, true, first)); first = false;
+            out.push(this.titleItem(cv.lContact, x, w, true, !this.photo));
             cv.contacts.forEach((ct, i) => {
                 const p = this.tp(9, false, this.sideInk);
                 const l = this.lay(ct[1], p, w - 14);
@@ -286,20 +338,60 @@ export class CvPainter {
                 } });
             });
         }
-        const dotColor = this.model === "dark" ? WHITE : this.p;
-        for (const [label, list] of [[cv.lSkills, cv.skills], [cv.lLanguages, cv.languages], [cv.lInterests, cv.interests]]) {
-            if (!list.length) continue;
-            out.push(this.titleItem(label, x, w, true, first)); first = false;
-            out.push(...this.bulletItems(list, x, w, this.sideInk, dotColor, 9.5));
+        return out;
+    }
+
+    /** Une rubrique (titre compris), dessinée pour la colonne de côté (side) ou la partie principale. */
+    section(sec, side, first) {
+        const cv = this.cv, model = this.model;
+        const label = { profile: cv.lProfile, education: cv.lEducation, skills: cv.lSkills, languages: cv.lLanguages,
+            interests: cv.lInterests, references: cv.lReferences, experience: cv.lExperience }[sec];
+        if (side) {
+            const x = this.sideX, w = this.sideW, ink = this.sideInk;
+            const dotColor = model === "dark" ? WHITE : this.p;
+            const out = [this.titleItem(label, x, w, true, first)];
+            if (sec === "profile" || sec === "references") out.push(this.paraItem(cv[sec], x, w, this.tp(9.5, false, ink), 6));
+            else if (sec === "education") cv.education.forEach((e, i) => out.push(...this.sideEntryItems(e, x, w, i === 0)));
+            else out.push(...this.bulletItems(cv[sec], x, w, ink, dotColor, 9.5));
+            return out;
+        }
+        const x = model === "band" ? this.mainX + 14 : this.mainX, w = model === "band" ? this.mainW - 14 : this.mainW;
+        const out = [this.titleItem(label, this.mainX, this.mainW, false, first)];
+        const body = this.tp(9.5);
+        if (sec === "profile" || sec === "references") out.push(this.paraItem(cv[sec], x, w, body, 5));
+        else if (sec === "experience") cv.experience.forEach((e, i) => out.push(...this.entryItems(e, x, w, i === 0, false)));
+        else if (sec === "education") cv.education.forEach((e, i) => out.push(...this.entryItems(e, x, w, i === 0, true)));
+        else if (model === "center") out.push(...this.gridItems(cv[sec], x, w));
+        else if (this.sidebar && sec === "skills") out.push(...this.gridItems(cv[sec], x, w, 2));
+        else out.push(this.paraItem(cv[sec].join("   |   "), x, w, body, 5));
+        return out;
+    }
+
+    /** Formation dans la colonne de côté : titre, établissement et années les uns sous les autres. */
+    sideEntryItems(e, x, w, first) {
+        const ink = this.sideInk, soft = this.model === "dark" ? 0xFFDDE4F0 : MUTED;
+        const out = [this.paraItem(e.title, x, w, this.tp(10, true, ink), first ? 6 : 10)];
+        if (e.org) out.push(this.paraItem(e.org, x, w, this.tp(9, false, soft), 1));
+        if (e.period) out.push(this.paraItem(e.period, x, w, this.tp(9, false, soft), 1));
+        if (e.details) out.push(this.paraItem(e.details, x, w, this.tp(9, false, soft), 1));
+        e.bullets.forEach((b) => out.push(this.paraItem("• " + b, x, w, this.tp(9, false, ink), 1)));
+        return out;
+    }
+
+    sideItems() {
+        const out = this.sideBase();
+        let first = out.length === 0;
+        for (const sec of SIDE_ORDER) {
+            if (this.place[sec] !== "side" || !this.present(sec)) continue;
+            out.push(...this.section(sec, true, first)); first = false;
         }
         return out;
     }
 
-    mainItems() {
+    /** En-tête de la partie principale (nom, poste ; ou bloc centré). */
+    mainHead() {
         const out = [], cv = this.cv, model = this.model;
         const x = model === "band" ? this.mainX + 14 : this.mainX, w = model === "band" ? this.mainW - 14 : this.mainW;
-        const tx = this.mainX, tw = this.mainW;
-        let first = true;
         if (model === "center") {
             const d = 84;
             const nl = this.lay(cv.name, this.tp(26, true, INK, true), w, "CENTER");
@@ -322,27 +414,20 @@ export class CvPainter {
                 nl.draw(c, x, y);
                 if (jl) jl.draw(c, x, y + nl.height + 3);
             } });
-            first = false;
         }
-        const body = this.tp(9.5);
-        const title = (label) => { out.push(this.titleItem(label, tx, tw, false, first)); first = false; };
-        if (cv.profile) { title(cv.lProfile); out.push(this.paraItem(cv.profile, x, w, body, 5)); }
-        if (!this.sidebar && cv.skills.length) {
-            title(cv.lSkills);
-            if (model === "center") out.push(...this.gridItems(cv.skills, x, w));
-            else out.push(this.paraItem(cv.skills.join("   |   "), x, w, body, 5));
+        return out;
+    }
+
+    mainItems() {
+        const out = this.mainHead();
+        let first = this.model !== "dark" && this.model !== "light";
+        const order = this.sidebar ? MAIN_ORDER : ["profile", "skills", "experience", "education", "languages", "interests", "references"];
+        for (const sec of order) {
+            if (sec !== "experience" && !this.present(sec)) continue;
+            if (sec === "experience" && !this.cv.experience.length) continue;
+            if (this.sidebar && sec !== "experience" && this.place[sec] !== "main") continue;
+            out.push(...this.section(sec, false, first)); first = false;
         }
-        if (cv.experience.length) { title(cv.lExperience); cv.experience.forEach((e, i) => out.push(...this.entryItems(e, x, w, i === 0, false))); }
-        if (cv.education.length) { title(cv.lEducation); cv.education.forEach((e, i) => out.push(...this.entryItems(e, x, w, i === 0, true))); }
-        if (!this.sidebar) {
-            for (const [label, list] of [[cv.lLanguages, cv.languages], [cv.lInterests, cv.interests]]) {
-                if (!list.length) continue;
-                title(label);
-                if (model === "center") out.push(...this.gridItems(list, x, w));
-                else out.push(this.paraItem(list.join("   |   "), x, w, body, 5));
-            }
-        }
-        if (cv.references) { title(cv.lReferences); out.push(this.paraItem(cv.references, x, w, body, 5)); }
         return out;
     }
 }
