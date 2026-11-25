@@ -291,6 +291,9 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
     .preview-screen .export { position: sticky; top: 16px; align-self: start; border-radius: 20px; margin: 8px 24px 24px 0; padding: 20px; }
     .preview-screen .export .row { flex-direction: column; }
     .themes { flex-wrap: wrap; overflow: visible; }
+    /* réglages de l'aperçu : la zone ouverte défile d'elle-même sous la souris, sans faire bouger la page */
+    .preview-screen .style-box { max-height: min(46vh, 440px); overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; scrollbar-width: thin; }
+    .preview-screen .style-box .swatches, .preview-screen .style-box .chips.one-line { flex-wrap: wrap; overflow: visible; }
     .toast { bottom: 32px; }
 }
 

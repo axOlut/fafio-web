@@ -938,6 +938,28 @@ async function route() {
     }
 }
 
+// Souris : la molette fait défiler la rangée horizontale sous le pointeur (thèmes, couleurs, polices…)
+// au lieu de toute la page ; arrivée au bout de la rangée, c'est de nouveau la page qui défile.
+function wideRow(el) {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (n.scrollWidth > n.clientWidth + 1) {
+            const ox = getComputedStyle(n).overflowX;
+            if (ox === "auto" || ox === "scroll") return n;
+        }
+    }
+    return null;
+}
+window.addEventListener("wheel", (e) => {
+    if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // zoom, ou défilement déjà horizontal (pavé tactile)
+    const row = wideRow(e.target);
+    if (!row) return;
+    const step = e.deltaMode === 1 ? e.deltaY * 32 : e.deltaMode === 2 ? e.deltaY * row.clientWidth : e.deltaY;
+    const max = row.scrollWidth - row.clientWidth;
+    if ((step > 0 && row.scrollLeft >= max - 1) || (step < 0 && row.scrollLeft <= 0)) return;
+    e.preventDefault();
+    row.scrollLeft = Math.max(0, Math.min(max, row.scrollLeft + step));
+}, { passive: false });
+
 window.addEventListener("hashchange", route);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && leaveHook) leaveHook(); });
 applyPrefs();
