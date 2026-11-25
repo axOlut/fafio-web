@@ -1,5 +1,5 @@
 // Généré par tools/build_sw.py — garde FAFIO disponible hors ligne.
-const CACHE = "fafio-4e3d94e803";
+const CACHE = "fafio-28a3f628d4";
 const FILES = [
 "./",
 "assets/pptx/presProps.xml",

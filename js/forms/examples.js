@@ -4,8 +4,8 @@ import { t } from "./model.js";
 const map = {
         // ---------------------------------------------------------------- Champs communs
         "institution": t("Université de Yaoundé I – Faculté des Sciences", "University of Yaoundé I – Faculty of Science", "جامعة ياوندي 1 – كلية العلوم"),
-        "authors": t("NGUEDI Josh\nBELLO Amina\nMBARGA Paul", "NGUEDI Josh\nBELLO Amina\nMBARGA Paul", "نغيدي جوش\nبيلو أمينة\nمبارغا بول"),
-        "author": t("NGUEDI BESSALA Joseph", "NGUEDI BESSALA Joseph", "نغيدي بيسالا جوزيف"),
+        "authors": t("ONANA Carine\nBELLO Amina\nMBARGA Paul", "ONANA Carine\nBELLO Amina\nMBARGA Paul", "أونانا كارين\nبيلو أمينة\nمبارغا بول"),
+        "author": t("ATANGANA Brice", "ATANGANA Brice", "أتانغانا بريس"),
         "supervisor": t("Dr MBALLA Pierre", "Dr Pierre MBALLA", "د. بيار مبالا"),
         "org": t("Association des étudiants de la FS", "Science Students' Association", "جمعية طلبة كلية العلوم"),
         "city": t("Yaoundé", "Yaoundé", "ياوندي"),
@@ -18,7 +18,7 @@ const map = {
         "sender": t("MBARGA Paul", "Paul MBARGA", "بول مبارغا"),
         "sender_address": t("BP 812 Yaoundé\nQuartier Ngoa-Ekellé", "PO Box 812 Yaoundé\nNgoa-Ekellé", "ص.ب 812 ياوندي\nحي نغوا إيكيلي"),
         "sender_phone": t("+237 6 70 00 00 00", "+237 6 70 00 00 00", "+237 6 70 00 00 00"),
-        "sender_email": t("paul.mbarga@gmail.com", "paul.mbarga@gmail.com", "paul.mbarga@gmail.com"),
+        "sender_email": t("paul.mbarga@exemple.cm", "paul.mbarga@example.com", "paul.mbarga@example.com"),
         "recipient": t("Monsieur le Directeur Général\nde la Société CAMTEL\nYaoundé", "The General Manager\nCAMTEL\nYaoundé", "السيد المدير العام\nلشركة كامتل\nياوندي"),
         "attachments": t("Copie de la carte d'étudiant\nCurriculum vitae\nRelevés de notes", "Copy of student card\nCV\nTranscripts", "نسخة من بطاقة الطالب\nالسيرة الذاتية\nكشوف النقاط"),
         "copies": t("Chef du personnel\nArchives", "Head of HR\nFiles", "رئيس الموظفين\nالأرشيف"),
@@ -43,8 +43,8 @@ const map = {
         "tp.analysis": t("La valeur expérimentale est inférieure à la valeur théorique à cause des frottements…", "The measured value is lower than the theoretical one because of friction…", "القيمة التجريبية أقل من النظرية بسبب الاحتكاك…"),
         "tp.applications": t("- Routes et rampes d'accès\n- Tapis roulants\n- Systèmes de freinage", "- Roads and ramps\n- Conveyor belts\n- Braking systems", "- الطرق والمنحدرات\n- السيور المتحركة\n- أنظمة الكبح"),
         "tp.references": t("TOPO PHYSIQUE L2 S2\nhttps://fr.khanacademy.org", "Physics handout L2 S2\nhttps://www.khanacademy.org", "مطبوعة الفيزياء\nhttps://www.khanacademy.org"),
-        "members.nom": t("NGUEDI BESSALA", "NGUEDI BESSALA", "نغيدي بيسالا"),
-        "members.prenom": t("Joseph", "Joseph", "جوزيف"),
+        "members.nom": t("ATANGANA", "ATANGANA", "أتانغانا"),
+        "members.prenom": t("Brice", "Brice", "بريس"),
         "members.matricule": t("23Q2192", "23Q2192", "23Q2192"),
         "equipment.name": t("Pied à coulisse numérique", "Digital calliper", "قدمة رقمية"),
         "equipment.desc": t("Mesurer le diamètre de la bille", "Measure the ball's diameter", "قياس قطر الكرية"),
@@ -99,10 +99,10 @@ const map = {
         "reunion.actions.deadline": t("30 mars 2026", "30 March 2026", "30 مارس 2026"),
 
         // ---------------------------------------------------------------- CV
-        "cv.name": t("NGUEDI BESSALA Joseph", "Joseph NGUEDI BESSALA", "جوزيف نغيدي بيسالا"),
+        "cv.name": t("ATANGANA Brice", "Brice ATANGANA", "بريس أتانغانا"),
         "cv.job": t("Développeur web et mobile", "Web and mobile developer", "مطوّر ويب وتطبيقات"),
         "cv.phone": t("+237 6 90 00 00 00", "+237 6 90 00 00 00", "+237 6 90 00 00 00"),
-        "cv.email": t("joseph.nguedi@gmail.com", "joseph.nguedi@gmail.com", "joseph.nguedi@gmail.com"),
+        "cv.email": t("brice.atangana@exemple.cm", "brice.atangana@example.com", "brice.atangana@example.com"),
         "cv.address": t("Yaoundé, Cameroun", "Yaoundé, Cameroon", "ياوندي، الكاميرون"),
         "cv.profile": t("Développeur passionné, 3 ans d'expérience en applications Android et sites web. Rigoureux, autonome et orienté résultats.", "Passionate developer with 3 years' experience in Android apps and websites. Rigorous, autonomous and results-driven.", "مطوّر شغوف بخبرة 3 سنوات في تطبيقات أندرويد والمواقع. دقيق ومستقل وموجّه نحو النتائج."),
         "cv.skills": t("Kotlin, Java\nHTML, CSS, JavaScript\nGestion de projet", "Kotlin, Java\nHTML, CSS, JavaScript\nProject management", "Kotlin وJava\nHTML وCSS وJavaScript\nإدارة المشاريع"),
@@ -126,7 +126,7 @@ const map = {
         // ---------------------------------------------------------------- Exposé PowerPoint
         "expose.title": t("La photosynthèse", "Photosynthesis", "التركيب الضوئي"),
         "expose.subtitle": t("Exposé de SVT – Terminale D", "Biology presentation – Upper sixth", "عرض في علوم الحياة – السنة النهائية"),
-        "expose.authors": t("NGUEDI Josh\nBELLO Amina", "NGUEDI Josh\nBELLO Amina", "نغيدي جوش\nبيلو أمينة"),
+        "expose.authors": t("ONANA Carine\nBELLO Amina", "ONANA Carine\nBELLO Amina", "أونانا كارين\nبيلو أمينة"),
         "expose.teacher": t("Mme BIDZANGA, PLEG de SVT", "Mrs BIDZANGA, biology teacher", "السيدة بيدزانغا، أستاذة علوم الحياة"),
         "expose.institution": t("Lycée de Ngousso, Yaoundé", "Ngousso High School, Yaoundé", "ثانوية نغوسو، ياوندي"),
         "expose.slides.title": t("Introduction", "Introduction", "مقدمة"),
@@ -140,9 +140,9 @@ const map = {
         "pitch.market": t("2 millions d'élèves et d'étudiants au Cameroun\nÉcoles et petites entreprises", "2 million pupils and students in Cameroon\nSchools and small businesses", "مليونا تلميذ وطالب في الكاميرون\nالمدارس والمؤسسات الصغيرة"),
         "pitch.model": t("Gratuit avec publicité\nPremium à 1 000 FCFA/mois", "Free with ads\nPremium at 1,000 FCFA/month", "مجاني مع إعلانات\nنسخة مميزة بـ 1000 فرنك شهريًا"),
         "pitch.competition": t("Word et Canva : complexes sur téléphone\nNotre avantage : modèles camerounais, hors ligne", "Word and Canva: hard to use on phones\nOur edge: Cameroonian templates, offline", "Word وCanva صعبان على الهاتف\nميزتنا: قوالب كاميرونية ودون اتصال"),
-        "pitch.team": t("Josh NGUEDI – fondateur, développeur\nAmina BELLO – marketing", "Josh NGUEDI – founder, developer\nAmina BELLO – marketing", "جوش نغيدي – مؤسس ومطوّر\nأمينة بيلو – تسويق"),
+        "pitch.team": t("Brice ATANGANA – fondateur, développeur\nAmina BELLO – marketing", "Brice ATANGANA – founder, developer\nAmina BELLO – marketing", "بريس أتانغانا – مؤسس ومطوّر\nأمينة بيلو – تسويق"),
         "pitch.needs": t("5 millions FCFA pour le marketing et 2 développeurs", "5 million FCFA for marketing and 2 developers", "5 ملايين فرنك للتسويق ومطوّرين اثنين"),
-        "pitch.contact": t("infosaxolut@gmail.com – +237 6 21 65 99 27", "infosaxolut@gmail.com – +237 6 21 65 99 27", "infosaxolut@gmail.com"),
+        "pitch.contact": t("contact@monprojet.cm – +237 6 00 00 00 00", "contact@myproject.com – +237 6 00 00 00 00", "contact@myproject.com"),
 
         // ---------------------------------------------------------------- Lettres
         "lettre.sender_function": t("Étudiant en Master 1 de droit", "First-year Master's student in law", "طالب ماستر 1 في القانون"),
