@@ -313,3 +313,8 @@ details.faq p { margin: 10px 0 0; color: var(--muted); }
 .layout-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr); align-items: center; gap: 10px; }
 .chips.seg3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .chips.seg3 .chip { padding: 7px 4px; text-align: center; font-size: 13px; }
+
+/* Crédits : codes à recopier (parrainage, sauvegarde) */
+.code-box { font: 600 17px/1.3 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .06em; text-align: center; padding: 12px; border-radius: 14px; background: var(--primary-soft); color: var(--on-primary-soft); user-select: all; word-break: break-all; }
+.ref-banner { border: 1.5px solid var(--primary-soft); }
+.ref-banner .row .input { flex: 1; min-width: 0; }

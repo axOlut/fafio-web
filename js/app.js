@@ -198,6 +198,7 @@ function home() {
             h("div", { class: "grow" }, h("div", { class: "name" }, "FAFIO"), h("div", { class: "small muted" }, s("tagline"))),
             h("button", { class: "icon-btn", "aria-label": s("settings"), onClick: () => go("settings") }, icon("settings"))),
         installTip(),
+        referralBanner(),
         h("div", { class: "hero" }, h("h2", {}, s("hero_hello")), h("p", {}, s("hero_text"))),
         h("button", { class: "list-item", onClick: () => go("documents") },
             h("div", { class: "bubble", style: { background: "var(--primary-soft)", color: "var(--on-primary-soft)" } }, icon("folder")),
@@ -576,6 +577,7 @@ async function formScreen(id) {
         const filesBtnLabel = h("span");
         const filesHint = h("div", { class: "small muted" });
         const tabs = h("div", { class: "chips seg" });
+        let drawGo = () => {};
         const drawMode = () => {
             const idea = mode === "idea";
             tabs.replaceChildren(...[["info", "fill_tab_info"], ["idea", "fill_tab_idea"]].map(([m, k]) => h("button", { type: "button", class: "chip" + (mode === m ? " on" : ""), onClick: () => { mode = m; drawMode(); } }, s(k))));
@@ -586,6 +588,7 @@ async function formScreen(id) {
             filesHint.textContent = s("fill_files_hint");
             ideaBox.style.display = idea ? "" : "none";
             err.textContent = "";
+            drawGo();
         };
         const body = h("div", { class: "stack-s" },
             rule ? tabs : null,
@@ -596,6 +599,7 @@ async function formScreen(id) {
             err);
         drawMode();
         const go = h("button", {}, s("fill_go"));
+        drawGo = () => { go.textContent = s("fill_go") + " · " + s("cost_n", mode === "idea" ? Pro.FILL_COST.idea : Pro.FILL_COST.info); };
         go.addEventListener("click", async () => {
             const idea = mode === "idea";
             if (idea && !text.value.trim()) { err.textContent = s("fill_idea_empty"); return; }
@@ -615,9 +619,11 @@ async function formScreen(id) {
                 toast(todo ? s("fill_done_todo", n, todo) : s("fill_done", n), 6000);
             } catch (e) {
                 wait.remove(); go.disabled = false;
-                err.textContent = s("ai_error", e.message);
+                if (e.status === 402) { err.textContent = s("credits_need", e.data.need, e.data.credits); creditsDialog(e.data.need, e.data.credits); }
+                else err.textContent = s("ai_error", e.message);
             }
         });
+        drawGo();
         back.appendChild(h("div", { class: "dialog wide", role: "dialog" }, h("h3", {}, s("fill_title")), body,
             h("div", { class: "actions" }, h("button", { onClick: close }, s("cancel")), go)));
         back.addEventListener("click", (e) => { if (e.target === back) close(); });
@@ -755,12 +761,21 @@ async function previewScreen(id) {
     const type = draft && typeById(draft.typeId);
     if (!type) return go("home");
     const pagesBox = h("div", { class: "pages" }, h("div", { class: "spinner" }), h("div", { class: "muted" }, s("generating")));
-    let format = type.formats[0];
-    const chips = h("div", { class: "chips", style: { margin: "6px 0 12px" } });
+    let format = type.formats[0], clean = false, pages = 1, slides = false;
+    const chips = h("div", { class: "chips", style: { margin: "6px 0 8px" } });
+    const cleanRow = h("div");
+    const balance = h("div", { class: "small muted", style: { marginBottom: "10px" } });
     const label = { PDF: s("format_pdf"), DOCX: s("format_docx"), PPTX: s("format_pptx"), PNG: s("format_png") };
-    const locked = (f) => Pro.isPro(type, f) && !Pro.isUnlocked(id);
-    const drawChips = () => chips.replaceChildren(...type.formats.map((f) => h("button", { class: "chip" + (f === format ? " on" : ""), onClick: () => { format = f; drawChips(); } },
-        label[f] + (locked(f) ? " · " + s("pro_badge") : ""))));
+    const cost = () => Pro.costOf(type, pages, slides);
+    const price = () => (Pro.paidFor(id) >= cost() ? s("paid_badge") : s("cost_n", cost()));
+    const drawChips = () => {
+        chips.replaceChildren(...type.formats.map((f) => h("button", { class: "chip" + (f === format ? " on" : ""), onClick: () => { format = f; drawChips(); } },
+            label[f] + (f === "PDF" ? " · " + (clean ? price() : s("free_badge")) : f === "PNG" ? "" : " · " + price()))));
+        cleanRow.replaceChildren(...(format === "PDF" ? [h("label", { class: "row", style: { gap: "10px", marginBottom: "6px" } },
+            h("input", { type: "checkbox", checked: clean, onChange: (e) => { clean = e.target.checked; drawChips(); } }),
+            h("span", { class: "small" }, s("pdf_clean", price())))] : []));
+        balance.textContent = s("credits_have", Pro.credits());
+    };
     drawChips();
     // Réglages du style dans l'aperçu : un onglet ouvre sa rangée, le toucher à nouveau la referme
     let tab = -1, renderTimer = null, renderSeq = 0;
@@ -784,10 +799,25 @@ async function previewScreen(id) {
     };
     drawStyle();
     let busy = false;
-    /** Document Pro : utiliser un crédit (ou en acheter). Renvoie true si l'export peut continuer. */
-    const gate = () => (!locked(format) ? Promise.resolve(true) : proDialog(id).then((ok) => { drawChips(); return ok; }));
+    /** Téléchargement : gratuit (PDF avec mention) ou payé en crédits. Renvoie true si l'export peut continuer. */
+    async function gate() {
+        if (!Pro.isPaid(format, clean)) {
+            if (Pro.online()) Pro.spend(id, 0).catch(() => {}); // premier document : bonus du parrain
+            return true;
+        }
+        if (!Pro.online()) { toast(s("pro_offline")); return false; }
+        try {
+            const r = await Pro.spend(id, cost());
+            drawChips();
+            if (r.ok) { if (r.charged) toast(s("credits_spent", r.charged, r.credits)); return true; }
+            await creditsDialog(r.need, r.credits);
+            drawChips();
+            return false;
+        } catch (e) { toast(s("net_error", e.message)); return false; }
+    }
     async function make() {
-        const blob = await exportFile(type, draft.data, lang, format);
+        const mark = format === "PDF" && !clean ? s("made_with") : null;
+        const blob = await exportFile(type, draft.data, lang, format, { mark });
         return { blob, name: fileName(type, draft.data, lang, format) };
     }
     async function save() {
@@ -820,7 +850,7 @@ async function previewScreen(id) {
         h("div", { class: "scroll" }, pagesBox),
         h("div", { class: "export" }, h("div", { class: "inner" },
             tabs, styleBox,
-            h("div", { class: "title-m", style: { fontSize: "15px", marginTop: "10px" } }, s("download_as")), chips,
+            h("div", { class: "title-m", style: { fontSize: "15px", marginTop: "10px" } }, s("download_as")), chips, cleanRow, balance,
             h("div", { class: "row" },
                 h("button", { class: "btn", onClick: save }, icon("download"), s("save_to_phone")),
                 h("button", { class: "btn soft", onClick: share }, icon("share"), s("share")))))));
@@ -831,6 +861,7 @@ async function previewScreen(id) {
             const r = await preview(type, draft.data, lang);
             if (seq !== renderSeq) return;
             const n = r.pages.length;
+            pages = n; slides = r.w === 960; drawChips();
             pagesBox.replaceChildren(...r.pages.flatMap((cv, i) => [cv, h("div", { class: "pageno" }, s("page_n", i + 1, n))]),
                 h("div", { class: "muted small" }, s("end_of_document")));
         } catch (e) {
@@ -840,57 +871,118 @@ async function previewScreen(id) {
         if (seq === renderSeq) pagesBox.classList.remove("updating");
     }
     await render();
+    if (Pro.online()) Pro.refresh().then(drawChips).catch(() => {});
 }
 
-// ---------------------------------------------------------------- Gratuit / Pro
+// ---------------------------------------------------------------- Crédits
 
-function packButtons(onDone) {
+/** Achat de crédits : c'est le seul endroit où les montants en francs apparaissent. */
+function packButtons() {
     if (!Pro.online()) return [h("div", { class: "small muted" }, s("pro_buy_soon"))];
     return Pro.PACKS.map((p) => h("button", { class: "btn ghost", style: { width: "100%" }, onClick: async () => {
         try { await Pro.buy(p.id); } catch (e) { toast(s("pro_code_error", e.message)); }
-        if (onDone) onDone();
     } }, s("pro_pack", String(p.credits), String(p.price))));
 }
 
-function proDialog(draftId) {
+const shareUrl = () => location.origin + location.pathname;
+
+/** Partage du code de parrainage (WhatsApp ou menu de partage du téléphone). */
+async function shareReferral() {
+    const code = Pro.state().ref;
+    if (!code) { toast(s("pro_offline")); return; }
+    const text = s("ref_share_msg", code, shareUrl());
+    if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+}
+
+function codeField(placeholder) {
+    return h("input", { class: "input", placeholder, autocapitalize: "characters", spellcheck: "false" });
+}
+
+/** Il manque des crédits : les moyens d'en obtenir. */
+function creditsDialog(need, have) {
     return new Promise((resolve) => {
         const back = h("div", { class: "dialog-back" });
-        const close = (v) => { back.remove(); resolve(v); };
-        const body = h("div", { class: "stack-s" });
-        const draw = () => {
-            const n = Pro.credits();
-            body.replaceChildren(...[
-                h("div", { class: "muted" }, s("pro_explain")),
-                h("div", { class: "title-m", style: { color: "var(--primary)" } }, s("pro_credits", n)),
-                n > 0 ? h("button", { class: "btn", style: { width: "100%" }, onClick: () => { if (Pro.unlock(draftId)) { toast(s("pro_unlocked", Pro.UNLOCK_DAYS)); close(true); } } }, s("pro_use_credit")) : null,
-                h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_buy_title")),
-                ...packButtons(),
-                Pro.TEST_MODE ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: () => { Pro.addCredits(3); draw(); } }, s("pro_test_add")) : null].filter(Boolean));
-        };
-        draw();
-        back.appendChild(h("div", { class: "dialog wide", role: "dialog" }, h("h3", {}, s("pro_title")), body,
-            h("div", { class: "actions" }, h("button", { onClick: () => close(false) }, s("cancel")))));
-        back.addEventListener("click", (e) => { if (e.target === back) close(false); });
+        const close = () => { back.remove(); resolve(); };
+        const code = codeField(s("pro_code_label"));
+        back.appendChild(h("div", { class: "dialog wide", role: "dialog" }, h("h3", {}, s("credits_title")),
+            h("div", { class: "stack-s" },
+                h("div", { class: "muted" }, s("credits_need", need, have)),
+                h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_buy_title")), ...packButtons(),
+                h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_code_label")), code,
+                h("button", { class: "btn soft", style: { width: "100%" }, onClick: async () => {
+                    if (!code.value.trim()) return;
+                    try { const n = await Pro.redeem(code.value); toast(s("pro_code_ok", n)); close(); } catch (e) { toast(s("pro_code_error", e.message)); }
+                } }, s("pro_code_btn")),
+                h("button", { class: "btn ghost", style: { width: "100%" }, onClick: shareReferral }, s("ref_invite_gain")),
+                Pro.TEST_MODE ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: async () => {
+                    try { await Pro.testCredits(); toast(s("pro_test_ok")); close(); } catch (e) { toast(s("pro_code_error", e.message)); }
+                } }, s("pro_test_add")) : null),
+            h("div", { class: "actions" }, h("button", { onClick: close }, s("cancel")))));
+        back.addEventListener("click", (e) => { if (e.target === back) close(); });
         document.body.appendChild(back);
     });
 }
 
-function proCard() {
-    const count = h("div", { class: "title-m" }, s("pro_credits", Pro.credits()));
-    const code = h("input", { class: "input", placeholder: s("pro_code_label"), autocapitalize: "characters", spellcheck: "false" });
-    const refresh = () => { count.textContent = s("pro_credits", Pro.credits()); };
-    const redeemBtn = h("button", { class: "btn", style: { width: "100%" }, onClick: async () => {
-        if (!code.value.trim()) return;
-        if (!Pro.online()) { toast(s("pro_offline")); return; }
-        try { const n = await Pro.redeem(code.value); code.value = ""; refresh(); toast(s("pro_code_ok", n)); }
-        catch (e) { toast(s("pro_code_error", e.message)); }
-    } }, s("pro_code_btn"));
-    return h("div", { class: "card stack-s" }, count,
-        h("div", { class: "small muted" }, s("pro_device_id", Pro.deviceId())),
-        h("div", { class: "small muted" }, s("pro_web_note")),
-        code, redeemBtn,
-        h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_buy_title")), ...packButtons(),
-        Pro.TEST_MODE ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: () => { Pro.addCredits(3); refresh(); } }, s("pro_test_add")) : null);
+/** Paramètres : solde, recharge, achat, parrainage, sauvegarde. */
+function creditsCard() {
+    const box = h("div", { class: "stack" });
+    const draw = () => {
+        const st = Pro.state();
+        const code = codeField(s("pro_code_label"));
+        const friend = codeField(s("ref_friend_ph"));
+        const restoreIn = codeField("FAF-XXXX-XXXX-XXXX-XXXX");
+        const act = (fn, ok) => async () => {
+            if (!Pro.online()) { toast(s("pro_offline")); return; }
+            try { const msg = await fn(); draw(); if (msg) toast(msg); } catch (e) { toast(s("pro_code_error", e.message)); }
+        };
+        box.replaceChildren(
+            h("div", { class: "card stack-s" },
+                h("div", { class: "title-m", style: { color: "var(--primary)" } }, s("credits_have", st.credits || 0)),
+                h("div", { class: "small muted" }, s("credits_rule")),
+                code,
+                h("button", { class: "btn", style: { width: "100%" }, onClick: act(async () => { if (!code.value.trim()) return null; return s("pro_code_ok", await Pro.redeem(code.value)); }) }, s("pro_code_btn")),
+                h("div", { class: "small muted", style: { marginTop: "6px" } }, s("pro_buy_title")), ...packButtons(),
+                Pro.TEST_MODE ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: act(async () => { await Pro.testCredits(); return s("pro_test_ok"); }) }, s("pro_test_add")) : null),
+            h("div", { class: "card stack-s" },
+                h("div", { class: "title-m" }, s("ref_title")),
+                h("div", { class: "small muted" }, s("ref_explain")),
+                st.ref ? h("div", { class: "code-box" }, st.ref) : null,
+                h("button", { class: "btn", style: { width: "100%" }, onClick: shareReferral }, icon("share"), s("ref_invite")),
+                st.canRefer !== false ? h("div", { class: "small muted", style: { marginTop: "6px" } }, s("ref_friend_title")) : null,
+                st.canRefer !== false ? friend : null,
+                st.canRefer !== false ? h("button", { class: "btn soft", style: { width: "100%" }, onClick: act(async () => { if (!friend.value.trim()) return null; await Pro.referral(friend.value); return s("ref_ok"); }) }, s("ref_friend_btn")) : null),
+            h("div", { class: "card stack-s" },
+                h("div", { class: "title-m" }, s("backup_title")),
+                h("div", { class: "small muted" }, s("backup_explain")),
+                h("div", { class: "code-box" }, Pro.backupCode()),
+                h("button", { class: "btn soft", style: { width: "100%" }, onClick: async () => {
+                    try { await navigator.clipboard.writeText(Pro.backupCode()); toast(s("backup_copied")); } catch (e) { toast(Pro.backupCode()); }
+                } }, s("backup_copy")),
+                h("div", { class: "small muted", style: { marginTop: "6px" } }, s("restore_title")),
+                restoreIn,
+                h("button", { class: "btn ghost", style: { width: "100%" }, onClick: act(async () => { if (!restoreIn.value.trim()) return null; await Pro.restore(restoreIn.value); return s("restore_ok"); }) }, s("restore_btn"))));
+    };
+    draw();
+    if (Pro.online()) Pro.refresh().then(draw).catch(() => {});
+    return box;
+}
+
+/** Accueil : saisir le code d'un ami, tant qu'aucun document n'a été créé. */
+function referralBanner() {
+    const st = Pro.state();
+    if (!Pro.online() || st.canRefer === false || Settings.get("ref.hide", "") === "1") return null;
+    const input = codeField(s("ref_friend_ph"));
+    const card = h("div", { class: "card stack-s ref-banner" },
+        h("div", { class: "row" }, h("div", { class: "grow title-m" }, s("ref_banner_title")),
+            h("button", { class: "icon-btn", "aria-label": s("cancel"), onClick: () => { Settings.set("ref.hide", "1"); card.remove(); } }, "✕")),
+        h("div", { class: "small muted" }, s("ref_banner_text")),
+        h("div", { class: "row", style: { gap: "8px" } }, input,
+            h("button", { class: "btn", onClick: async () => {
+                if (!input.value.trim()) return;
+                try { await Pro.referral(input.value); toast(s("ref_ok")); card.remove(); } catch (e) { toast(s("pro_code_error", e.message)); }
+            } }, s("ref_friend_btn"))));
+    return card;
 }
 
 // ---------------------------------------------------------------- Réglages, FAQ, À propos
@@ -921,7 +1013,7 @@ function settings() {
             row("translate", s("language"), langs.find((x) => x[0] === curL)[1], () => choiceDialog(s("language"), langs, curL, (v) => { Settings.set("lang", v); applyPrefs(); settings(); })),
             row("palette", s("theme"), themes.find((x) => x[0] === curT)[1], () => choiceDialog(s("theme"), themes, curT, (v) => { Settings.set("theme", v); applyPrefs(); settings(); }))),
         h("div", { class: "section-label" }, s("pro_section")),
-        proCard(),
+        creditsCard(),
         isStandalone() ? null : h("div", { class: "section-label" }, s("install_app")),
         isStandalone() ? null : h("div", { class: "card" }, h("div", { class: "muted small", style: { marginBottom: "10px" } }, s("install_hint")), installButton()),
         h("div", { class: "section-label" }, s("section_help")),
@@ -995,6 +1087,8 @@ window.addEventListener("hashchange", route);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && leaveHook) leaveHook(); });
 applyPrefs();
 route();
+// Portefeuille de crédits (créé à la première ouverture, avec les crédits de bienvenue)
+if (Pro.online()) Pro.refresh().then(() => { if ((location.hash || "#/home").match(/home|^#?$/)) route(); }).catch(() => {});
 // Retour d'un paiement Mobile Money : on récupère le code et on ajoute les crédits
 Pro.checkPending().then((r) => {
     if (!r) return;

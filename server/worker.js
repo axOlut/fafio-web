@@ -1,13 +1,25 @@
-// Serveur FAFIO (Cloudflare Workers, offre gratuite) : codes de recharge, paiement Mobile Money (Fapshi), assistant IA.
+// Serveur FAFIO (Cloudflare Workers, offre gratuite) : portefeuilles de crédits (sans compte), parrainage, codes de recharge,
+// paiement Mobile Money (Fapshi), assistant IA.
 // IA : Workers AI de Cloudflare (liaison « AI », sans clé) ou, si un secret GEMINI_KEY est ajouté, Gemini.
 // Aucun secret dans ce fichier : les clés sont des « secrets » du Worker (GEMINI_KEY, FAPSHI_USER, FAPSHI_KEY, ADMIN_TOKEN).
 // Stockage : un espace KV lié sous le nom FAFIO.
 
+// 1 crédit = 25 F ; bonus sur les gros packs. Les montants en francs n'apparaissent qu'au moment de l'achat.
 const PACKS = {
-    p3: { price: 200, credits: 3 },
-    p10: { price: 500, credits: 10 },
-    p35: { price: 1500, credits: 35 },
+    p4: { price: 100, credits: 4 },
+    p11: { price: 250, credits: 11 },
+    p24: { price: 500, credits: 24 },
+    p50: { price: 1000, credits: 50 },
+    p130: { price: 2500, credits: 130 },
 };
+const WELCOME = 5;          // crédits offerts à la création du portefeuille
+const AD_REWARD = 2;        // crédits par vidéo publicitaire regardée
+const ADS_PER_DAY = 2;      // vidéos récompensées par jour
+const REF_NEW = 3;          // bonus du filleul
+const REF_SPONSOR = 5;      // bonus du parrain, quand le filleul crée son premier document
+const REF_PER_MONTH = 30;   // parrainages récompensés par parrain et par mois
+const UNLOCK_DAYS = 7;      // un document payé se retélécharge gratuitement pendant 7 jours
+const FILL_COST = { info: 1, idea: 2 };
 const AI_PER_DAY = 10; // demandes d'IA gratuites par appareil et par jour
 const MAX_TEXT = 6000;
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sans 0/O, 1/I/L
@@ -35,19 +47,183 @@ async function createCode(env, credits, origin) {
     throw new Error("code");
 }
 
+// ---------------------------------------------------------------- Portefeuilles (sans compte)
+// Chaque appareil crée une clé secrète FAF-XXXX-XXXX-XXXX-XXXX (80 bits) : c'est aussi son code de sauvegarde.
+// La saisir sur un autre appareil (ou sur le web) y ramène le solde. Aucun nom, aucun numéro.
+
+const WALLET_RE = /^FAF(-[A-Z0-9]{4}){4}$/;
+const month = () => today().slice(0, 6);
+
+function walletKey(body) {
+    const k = String(body.device || "").trim().toUpperCase();
+    return WALLET_RE.test(k) ? k : null;
+}
+
+async function loadWallet(env, key) {
+    const raw = await env.FAFIO.get("w:" + key);
+    return raw ? JSON.parse(raw) : null;
+}
+const saveWallet = (env, key, w) => env.FAFIO.put("w:" + key, JSON.stringify(w));
+
+function refCode() {
+    const b = crypto.getRandomValues(new Uint8Array(6));
+    return [...b].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join("");
+}
+
+/** Portefeuille de l'appareil ; créé au premier appel avec les crédits de bienvenue (+ les anciens crédits locaux, plafonnés). */
+async function getWallet(env, key, migrate = 0) {
+    let w = await loadWallet(env, key);
+    if (w) return w;
+    let ref = refCode();
+    for (let i = 0; i < 4 && (await env.FAFIO.get("ref:" + ref)); i++) ref = refCode();
+    w = { credits: WELCOME + Math.max(0, Math.min(50, parseInt(migrate, 10) || 0)), created: Date.now(), ref, by: null, first: false, ads: { day: "", n: 0 } };
+    await env.FAFIO.put("ref:" + ref, key);
+    await saveWallet(env, key, w);
+    return w;
+}
+
+const view = (w) => ({
+    credits: w.credits,
+    ref: w.ref,
+    adsLeft: w.ads && w.ads.day === today() ? Math.max(0, ADS_PER_DAY - w.ads.n) : ADS_PER_DAY,
+    canRefer: !w.by && !w.first,
+    referred: !!w.by,
+});
+
+async function wallet(env, body) {
+    const key = walletKey(body);
+    if (!key) return fail("portefeuille invalide");
+    return json(view(await getWallet(env, key, body.migrate)));
+}
+
+/** Premier document du filleul : le parrain reçoit son bonus (plafonné par mois). */
+async function firstDocument(env, w) {
+    if (w.first) return;
+    w.first = true;
+    if (!w.by) return;
+    const sponsor = await loadWallet(env, w.by);
+    if (!sponsor) return;
+    const m = month();
+    sponsor.refs = sponsor.refs && sponsor.refs.m === m ? sponsor.refs : { m, n: 0 };
+    if (sponsor.refs.n >= REF_PER_MONTH) return;
+    sponsor.refs.n++;
+    sponsor.credits += REF_SPONSOR;
+    await saveWallet(env, w.by, sponsor);
+}
+
+/**
+ * Téléchargement d'un document : cost = crédits demandés (0 pour un PDF gratuit avec la mention FAFIO).
+ * Un document payé se retélécharge gratuitement pendant UNLOCK_DAYS ; s'il grossit, seule la différence est demandée.
+ */
+async function spend(env, body) {
+    const key = walletKey(body);
+    if (!key) return fail("portefeuille invalide");
+    const doc = String(body.doc || "").slice(0, 60);
+    const cost = Math.max(0, Math.min(20, parseInt(body.cost, 10) || 0));
+    const w = await getWallet(env, key);
+    let charged = 0;
+    if (cost > 0 && doc) {
+        const uk = `u:${key}:${doc}`;
+        const raw = await env.FAFIO.get(uk);
+        const u = raw ? JSON.parse(raw) : null;
+        const paid = u && u.until > Date.now() ? u.paid : 0;
+        const need = Math.max(0, cost - paid);
+        if (need > w.credits) return json({ error: "crédits insuffisants", need, ...view(w) }, 402);
+        if (need > 0) {
+            w.credits -= need; charged = need;
+            await env.FAFIO.put(uk, JSON.stringify({ paid: cost, until: Date.now() + UNLOCK_DAYS * 86400000 }), { expirationTtl: UNLOCK_DAYS * 86400 + 3600 });
+        }
+    }
+    await firstDocument(env, w);
+    await saveWallet(env, key, w);
+    return json({ charged, ...view(w) });
+}
+
+/** Vidéo publicitaire regardée jusqu'au bout (application Android). */
+async function reward(env, body) {
+    const key = walletKey(body);
+    if (!key) return fail("portefeuille invalide");
+    const w = await getWallet(env, key);
+    const d = today();
+    if (!w.ads || w.ads.day !== d) w.ads = { day: d, n: 0 };
+    if (w.ads.n >= ADS_PER_DAY) return json({ error: `limite de ${ADS_PER_DAY} vidéos par jour atteinte`, ...view(w) }, 429);
+    w.ads.n++;
+    w.credits += AD_REWARD;
+    await saveWallet(env, key, w);
+    return json({ added: AD_REWARD, ...view(w) });
+}
+
+/** Code de parrainage d'un ami : seulement avant le premier document, une seule fois. */
+async function referral(env, body) {
+    const key = walletKey(body);
+    if (!key) return fail("portefeuille invalide");
+    const code = String(body.code || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const w = await getWallet(env, key);
+    if (w.by) return fail("un code de parrainage a déjà été utilisé sur cet appareil", 409);
+    if (w.first) return fail("le code de parrainage se saisit avant le premier document", 409);
+    const sponsor = await env.FAFIO.get("ref:" + code);
+    if (!sponsor) return fail("code de parrainage inconnu", 404);
+    if (sponsor === key) return fail("tu ne peux pas utiliser ton propre code", 409);
+    w.by = sponsor;
+    w.credits += REF_NEW;
+    await saveWallet(env, key, w);
+    return json({ added: REF_NEW, ...view(w) });
+}
+
+/** Restauration : le solde de l'appareil actuel rejoint le portefeuille sauvegardé, qui devient celui de l'appareil. */
+async function restore(env, body) {
+    const target = String(body.code || "").trim().toUpperCase();
+    if (!WALLET_RE.test(target)) return fail("code de sauvegarde invalide");
+    const t = await loadWallet(env, target);
+    if (!t) return fail("code de sauvegarde inconnu", 404);
+    const key = walletKey(body);
+    if (key && key !== target) {
+        const cur = await loadWallet(env, key);
+        if (cur && cur.credits > 0) {
+            t.credits += cur.credits;
+            cur.credits = 0;
+            await saveWallet(env, key, cur);
+        }
+    }
+    await saveWallet(env, target, t);
+    return json({ key: target, ...view(t) });
+}
+
+/** Mode test (variable TEST_CREDITS = 1 dans Cloudflare) : +5 crédits, 3 fois par jour au plus. */
+async function testCredits(env, body) {
+    if (env.TEST_CREDITS !== "1") return fail("mode test désactivé", 403);
+    const key = walletKey(body);
+    if (!key) return fail("portefeuille invalide");
+    const w = await getWallet(env, key);
+    const d = today();
+    w.test = w.test && w.test.day === d ? w.test : { day: d, n: 0 };
+    if (w.test.n >= 3) return fail("limite du mode test atteinte pour aujourd'hui", 429);
+    w.test.n++;
+    w.credits += 5;
+    await saveWallet(env, key, w);
+    return json({ added: 5, ...view(w) });
+}
+
 // ---------------------------------------------------------------- Codes de recharge
 
 async function redeem(env, body) {
     const code = String(body.code || "").trim().toUpperCase();
     const device = String(body.device || "").slice(0, 40);
-    if (!/^FAF-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return fail("code invalide");
+    if (!/^FAF-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return fail(WALLET_RE.test(code) ? "c'est un code de sauvegarde : utilise « Restaurer mes crédits »" : "code invalide");
     const raw = await env.FAFIO.get("code:" + code);
     if (!raw) return fail("code inconnu", 404);
     const c = JSON.parse(raw);
     if (c.used) return fail("code déjà utilisé", 409);
     c.used = true; c.device = device; c.usedAt = Date.now();
     await env.FAFIO.put("code:" + code, JSON.stringify(c));
-    return json({ credits: c.credits });
+    const key = walletKey(body);
+    if (key) {
+        const w = await getWallet(env, key);
+        w.credits += c.credits;
+        await saveWallet(env, key, w);
+        return json({ added: c.credits, ...view(w) });
+    }
+    return json({ added: c.credits, credits: c.credits });
 }
 
 /** Codes créés à la main (vente par WhatsApp avant la passerelle) : Authorization: Bearer ADMIN_TOKEN. */
@@ -226,9 +402,27 @@ async function fill(env, body, req) {
     const files = (Array.isArray(body.files) ? body.files : []).slice(0, FILL_FILES);
     if (!text && !files.length) return fail("rien à lire : écris quelques lignes ou ajoute un fichier");
     if (!env.GEMINI_KEY && !env.AI) return fail("assistant pas encore activé", 503);
+    const key = walletKey(body);
+    if (!key) return fail("portefeuille invalide");
+    const fillCost = body.mode === "idea" ? FILL_COST.idea : FILL_COST.info;
+    let w = await getWallet(env, key);
+    if (w.credits < fillCost) return json({ error: "crédits insuffisants", need: fillCost, ...view(w) }, 402);
     const used = await takeQuota(env, body, req);
     if (used === null) return fail(`limite de ${AI_PER_DAY} demandes par jour atteinte, reviens demain`, 429);
+    try {
+        const out = await fillRun(env, body, schema, text, files);
+        if (out instanceof Response) return out;
+        w = await getWallet(env, key);
+        w.credits -= fillCost;
+        await saveWallet(env, key, w);
+        return json({ ...out, charged: fillCost, left: AI_PER_DAY - used - 1, ...view(w) });
+    } catch (e) {
+        return fail(String(e.message || e), 502);
+    }
+}
 
+/** Le travail de l'IA : renvoie { values, groups, sources } ou une réponse d'erreur. Aucun crédit n'est pris en cas d'échec. */
+async function fillRun(env, body, schema, text, files) {
     // Fichiers : images à part, documents (PDF, Word) convertis en texte
     const images = [], docs = [];
     for (const f of files) {
@@ -309,7 +503,7 @@ async function fill(env, body, req) {
     }
     const parsed = parseJsonReply(reply);
     if (!parsed) return fail("réponse de l'IA illisible, réessaie", 502);
-    return json({ ...cleanFill(parsed, schema), sources, left: AI_PER_DAY - used - 1 });
+    return { ...cleanFill(parsed, schema), sources };
 }
 
 // ---------------------------------------------------------------- Rédaction à partir d'une idée
@@ -374,11 +568,17 @@ export default {
         const url = new URL(req.url);
         if (req.method === "OPTIONS") return json({});
         try {
-            if (url.pathname === "/api/health") return json({ ok: true, ai: !!(env.GEMINI_KEY || env.AI), pay: !!(env.FAPSHI_USER && env.FAPSHI_KEY), packs: PACKS });
+            if (url.pathname === "/api/health") return json({ ok: true, ai: !!(env.GEMINI_KEY || env.AI), pay: !!(env.FAPSHI_USER && env.FAPSHI_KEY), test: env.TEST_CREDITS === "1", packs: PACKS });
             if (url.pathname === "/api/pay/status" && req.method === "GET") return await payStatus(env, url);
             if (req.method !== "POST") return fail("introuvable", 404);
             const body = await req.json().catch(() => ({}));
             switch (url.pathname) {
+                case "/api/wallet": return await wallet(env, body);
+                case "/api/spend": return await spend(env, body);
+                case "/api/reward": return await reward(env, body);
+                case "/api/referral": return await referral(env, body);
+                case "/api/restore": return await restore(env, body);
+                case "/api/test/credits": return await testCredits(env, body);
                 case "/api/redeem": return await redeem(env, body);
                 case "/api/ai": return await ai(env, body, req);
                 case "/api/fill": return await fill(env, body, req);

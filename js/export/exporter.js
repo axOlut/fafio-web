@@ -261,7 +261,24 @@ async function templates() {
 }
 
 /** Produit le fichier demandé. Renvoie un Blob. */
-export async function exportFile(type, data, lang, format) {
+/** Mention discrète en bas de chaque page des PDF gratuits (« Fait avec FAFIO »). */
+function stamp(r, text) {
+    for (const cv of r.pages) {
+        const c = cv.getContext("2d");
+        const k = cv.width / r.w;
+        c.save();
+        c.setTransform(1, 0, 0, 1, 0, 0); // le canevas garde l'échelle du dessin : on revient aux pixels
+        c.font = `${7.5 * k}px "Helvetica Neue", Arial, sans-serif`;
+        c.fillStyle = "rgba(107,114,128,0.85)";
+        c.textAlign = "center";
+        c.textBaseline = "bottom";
+        c.fillText(text, cv.width / 2, cv.height - 7 * k);
+        c.restore();
+    }
+}
+
+/** opts.mark : texte de la mention des PDF gratuits (absent pour un PDF payé). */
+export async function exportFile(type, data, lang, format, opts = {}) {
     if (format === "PNG") {
         const img = renderChart(chartSpec(new Form(data)));
         if (!img) throw new Error("no data");
@@ -276,6 +293,7 @@ export async function exportFile(type, data, lang, format) {
         bytes = await compressZip(writePptx(doc, await templates()));
     } else {
         const r = await renderDoc(doc, 2.5);
+        if (opts.mark) stamp(r, opts.mark);
         bytes = await toPdf(r, doc.title || type.title.get(lang));
     }
     return new Blob([bytes], { type: MIME[format] });
